@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>rosmon — ROS2 System Monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --base-00:#0d1014; --base-01:#141920; --base-02:#1c2129;
+  --base-03:#252b35; --base-04:#343c4a; --base-05:#8892a2;
+  --base-06:#c8ced8; --base-07:#e8ecf0;
+  --amber:#d4923a; --amber-dim:rgba(212,146,58,0.12);
+  --teal:#3aaa8c; --teal-dim:rgba(58,170,140,0.1);
+  --rose:#c9485b; --rose-dim:rgba(201,72,91,0.1);
+  --slate:#5b7bb4; --slate-dim:rgba(91,123,180,0.1);
+  --green:#5ea65d; --green-dim:rgba(94,166,93,0.1);
+}
+@media(prefers-color-scheme:light){:root:not([data-theme="dark"]){
+  --base-00:#f4f5f7;--base-01:#eaecf0;--base-02:#dfe2e8;
+  --base-03:#cdd1da;--base-04:#b0b6c3;--base-05:#6b7486;
+  --base-06:#3a4050;--base-07:#1a1e28;
+}}
+:root[data-theme="dark"]{--base-00:#0d1014}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'JetBrains Mono',monospace;background:var(--base-00);color:var(--base-06);font-size:12px;overflow:hidden;height:100vh}
+::selection{background:var(--amber);color:var(--base-00)}
+
+.shell{display:grid;grid-template-rows:36px 1fr 28px;height:100vh}
+
+.topbar{background:var(--base-01);border-bottom:1px solid var(--base-03);display:flex;align-items:center;padding:0 12px;gap:12px;user-select:none}
+.topbar .logo{font-weight:700;font-size:13px;color:var(--amber);letter-spacing:-0.02em}
+.topbar .logo span{color:var(--base-05);font-weight:400}
+.topbar .sep{width:1px;height:16px;background:var(--base-03)}
+.tabs{display:flex;gap:0}
+.tab{padding:8px 14px;color:var(--base-05);cursor:pointer;border-bottom:2px solid transparent;font-size:11px;font-weight:500;transition:color 0.1s}
+.tab:hover{color:var(--base-06)}
+.tab.on{color:var(--amber);border-bottom-color:var(--amber)}
+.topbar .meta{margin-left:auto;display:flex;align-items:center;gap:14px;color:var(--base-05);font-size:10px}
+.topbar .meta .pulse{width:5px;height:5px;border-radius:50%;background:var(--green);animation:blink 2.5s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.25}}
+
+.workspace{display:grid;grid-template-columns:200px 1fr 280px;overflow:hidden}
+
+.panel{background:var(--base-01);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--base-03) transparent}
+.panel-l{border-right:1px solid var(--base-02)}
+.panel-r{border-left:1px solid var(--base-02)}
+.panel-header{padding:10px 12px 6px;font-size:10px;color:var(--base-05);font-weight:600;letter-spacing:0.03em;position:sticky;top:0;background:var(--base-01);z-index:1}
+
+.nlist{padding:0 6px 6px}
+.nitem{display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:4px;cursor:pointer;transition:background 0.08s;color:var(--base-06)}
+.nitem:hover{background:var(--base-02)}
+.nitem.sel{background:var(--amber-dim);color:var(--amber)}
+.nitem .dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.nitem .dot.ok{background:var(--green)}
+.nitem .dot.warn{background:var(--amber)}
+.nitem .dot.err{background:var(--rose)}
+.nitem .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+.nitem .hz{color:var(--base-05);font-size:10px;flex-shrink:0}
+.grp{padding:8px 8px 3px;font-size:9px;color:var(--base-04);font-weight:600;letter-spacing:0.05em}
+
+.canvas-area{background:var(--base-00);position:relative;overflow:hidden}
+.canvas-area svg{width:100%;height:100%}
+.edge{stroke:var(--base-03);stroke-width:1;fill:none}
+.edge.lit{stroke-width:1.5}
+.nbox rect{rx:4;ry:4;stroke-width:1}
+.nbox text{font-family:'JetBrains Mono',monospace}
+.nbox .nlbl{font-size:9.5px;font-weight:600;fill:var(--base-06)}
+.nbox .nsub{font-size:8px;fill:var(--base-05)}
+.particle{opacity:0}
+
+.inspector{padding:10px 12px}
+.icard{background:var(--base-02);border-radius:6px;padding:10px 12px;margin-bottom:8px}
+.icard .ik{font-size:9px;color:var(--base-05);margin-bottom:3px;font-weight:500}
+.icard .iv{font-size:15px;font-weight:700;color:var(--base-07)}
+.icard .iv.sm{font-size:12px;font-weight:500;color:var(--base-06)}
+.igrid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.itopic{padding:5px 0;border-bottom:1px solid var(--base-03);display:flex;justify-content:space-between;font-size:10px}
+.itopic:last-child{border:none}
+.itopic .tn{color:var(--slate)}
+.itopic .tt{color:var(--base-05)}
+.itopic .tf{color:var(--teal)}
+.isec{margin-top:10px}
+.isec .isec-title{font-size:9px;color:var(--base-05);font-weight:600;margin-bottom:6px;letter-spacing:0.03em}
+.qos-tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:500;margin:1px}
+.qos-tag.be{background:var(--teal-dim);color:var(--teal)}
+.qos-tag.rel{background:var(--amber-dim);color:var(--amber)}
+.qos-tag.vol{background:var(--base-03);color:var(--base-05)}
+.qos-tag.tl{background:var(--slate-dim);color:var(--slate)}
+
+.bar-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.bar-label{width:50px;font-size:9px;color:var(--base-05);text-align:right}
+.bar-track{flex:1;height:4px;background:var(--base-03);border-radius:2px;overflow:hidden}
+.bar-fill{height:100%;border-radius:2px;transition:width 0.4s}
+
+.statusbar{background:var(--base-01);border-top:1px solid var(--base-02);display:flex;align-items:center;padding:0 12px;gap:16px;font-size:10px;color:var(--base-05)}
+.statusbar .si{display:flex;align-items:center;gap:4px}
+.statusbar .si .dot{width:4px;height:4px;border-radius:50%}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <div class="logo">rosmon <span>v2.4.1</span></div>
+    <div class="sep"></div>
+    <div class="tabs">
+      <div class="tab on" data-t="graph">Graph</div>
+      <div class="tab" data-t="topics">Topics</div>
+      <div class="tab" data-t="diag">Diagnostics</div>
+    </div>
+    <div class="meta">
+      <span>DDS: CycloneDDS 0.10.5</span>
+      <span>Domain: 0</span>
+      <span>ROS2 Jazzy</span>
+      <span class="pulse"></span>
+    </div>
+  </div>
+
+  <div class="workspace">
+    <div class="panel panel-l">
+      <div class="panel-header">Nodes (23 active)</div>
+      <div class="nlist" id="nlist"></div>
+    </div>
+    <div class="canvas-area" id="cvs"></div>
+    <div class="panel panel-r">
+      <div class="panel-header">Inspector</div>
+      <div class="inspector" id="inspector"></div>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <span class="si"><span class="dot" style="background:var(--green)"></span> micro-ROS Agent: connected</span>
+    <span class="si">MCU: STM32H743 @ 480MHz</span>
+    <span class="si">Transport: Serial 921600bd</span>
+    <span class="si">Uptime: <span id="ut">01:14:37</span></span>
+    <span class="si" style="margin-left:auto">CPU: <span id="cpuv">24%</span></span>
+    <span class="si">Mem: <span id="memv">1.34 GB</span></span>
+    <span class="si">Latency MCU→SBC: <span id="latv">0.82ms</span></span>
+  </div>
+</div>
+
+<script>
+const N = [
+  {id:'lidar',n:'/lidar_driver',g:'perception',s:'ok',hz:10,cpu:3.1,mem:82,pub:[{t:'/scan',m:'LaserScan',hz:10,qos:'be'}],sub:[],x:60,y:50,w:110},
+  {id:'cam',n:'/camera_node',g:'perception',s:'ok',hz:30,cpu:12.4,mem:340,pub:[{t:'/image_raw',m:'Image',hz:30,qos:'be'},{t:'/depth/points',m:'PointCloud2',hz:15,qos:'be'}],sub:[],x:60,y:130,w:110},
+  {id:'imu',n:'/imu_filter',g:'perception',s:'ok',hz:200,cpu:1.8,mem:14,pub:[{t:'/imu/data',m:'Imu',hz:200,qos:'be'}],sub:[{t:'/imu/data_raw',m:'Imu',hz:400}],x:60,y:210,w:110},
+  {id:'ekf',n:'/robot_localization',g:'estimation',s:'ok',hz:100,cpu:4.6,mem:48,pub:[{t:'/odometry/filtered',m:'Odometry',hz:100,qos:'be'}],sub:[{t:'/imu/data',m:'Imu'},{t:'/odom',m:'Odometry'}],x:260,y:130,w:130},
+  {id:'slam',n:'/slam_toolbox',g:'estimation',s:'ok',hz:5,cpu:22.3,mem:512,pub:[{t:'/map',m:'OccupancyGrid',hz:0.2,qos:'rel-tl'},{t:'/tf',m:'TFMessage',hz:5,qos:'be'}],sub:[{t:'/scan',m:'LaserScan'},{t:'/odometry/filtered',m:'Odometry'}],x:260,y:50,w:120},
+  {id:'gplan',n:'/planner_server',g:'planning',s:'ok',hz:1,cpu:3.8,mem:96,pub:[{t:'/plan',m:'Path',hz:1,qos:'rel'}],sub:[{t:'/map',m:'OccupancyGrid'},{t:'/scan',m:'LaserScan'}],x:460,y:50,w:120},
+  {id:'ctrl',n:'/controller_server',g:'planning',s:'ok',hz:20,cpu:5.2,mem:64,pub:[{t:'/cmd_vel',m:'Twist',hz:20,qos:'be'}],sub:[{t:'/plan',m:'Path'},{t:'/odometry/filtered',m:'Odometry'}],x:460,y:150,w:130},
+  {id:'bt',n:'/bt_navigator',g:'planning',s:'ok',hz:10,cpu:1.9,mem:28,pub:[],sub:[],x:460,y:250,w:110},
+  {id:'mux',n:'/twist_mux',g:'control',s:'ok',hz:50,cpu:0.4,mem:8,pub:[{t:'/cmd_vel_out',m:'Twist',hz:50,qos:'be'}],sub:[{t:'/cmd_vel',m:'Twist'}],x:650,y:150,w:100},
+  {id:'base',n:'/base_driver',g:'control',s:'ok',hz:100,cpu:2.2,mem:18,pub:[{t:'/odom',m:'Odometry',hz:100,qos:'be'},{t:'/joint_states',m:'JointState',hz:100,qos:'be'}],sub:[{t:'/cmd_vel_out',m:'Twist'}],x:650,y:260,w:100},
+  {id:'pid_fl',n:'/pid_front_left',g:'mcu',s:'ok',hz:1000,cpu:0,mem:0,pub:[{t:'/wheel/fl/state',m:'Float64',hz:100,qos:'be'}],sub:[{t:'/wheel/fl/cmd',m:'Float64'}],x:650,y:370,w:110},
+  {id:'pid_fr',n:'/pid_front_right',g:'mcu',s:'ok',hz:1000,cpu:0,mem:0,pub:[{t:'/wheel/fr/state',m:'Float64',hz:100,qos:'be'}],sub:[{t:'/wheel/fr/cmd',m:'Float64'}],x:780,y:370,w:115},
+  {id:'diag',n:'/diagnostic_agg',g:'system',s:'ok',hz:1,cpu:0.3,mem:12,pub:[{t:'/diagnostics_agg',m:'DiagnosticArray',hz:1,qos:'rel'}],sub:[{t:'/diagnostics',m:'DiagnosticStatus'}],x:260,y:340,w:120},
+  {id:'lm',n:'/lifecycle_manager',g:'system',s:'ok',hz:1,cpu:0.2,mem:6,pub:[],sub:[],x:260,y:260,w:130},
+  {id:'uros',n:'/micro_ros_agent',g:'system',s:'ok',hz:0,cpu:1.1,mem:24,pub:[],sub:[],x:650,y:50,w:120},
+];
+
+const E = [
+  {f:'lidar',t:'slam',c:0},{f:'lidar',t:'gplan',c:0},
+  {f:'cam',t:'ekf',c:1},{f:'imu',t:'ekf',c:2},
+  {f:'ekf',t:'slam',c:3},{f:'ekf',t:'ctrl',c:3},
+  {f:'slam',t:'gplan',c:0},{f:'gplan',t:'ctrl',c:1},
+  {f:'ctrl',t:'mux',c:4},{f:'mux',t:'base',c:4},
+  {f:'base',t:'ekf',c:2},{f:'base',t:'pid_fl',c:5},{f:'base',t:'pid_fr',c:5},
+];
+const ec = ['var(--green)','var(--slate)','var(--amber)','var(--teal)','var(--rose)','var(--base-05)'];
+const gn = {perception:'Perception',estimation:'State Estimation',planning:'Planning',control:'Control',mcu:'MCU (micro-ROS)',system:'System'};
+let sel = N[0];
+
+function rList(){
+  let h='';
+  const gs={};N.forEach(n=>{if(!gs[n.g])gs[n.g]=[];gs[n.g].push(n)});
+  for(const[g,ns]of Object.entries(gs)){
+    h+=`<div class="grp">${(gn[g]||g).toUpperCase()}</div>`;
+    ns.forEach(n=>{h+=`<div class="nitem ${n===sel?'sel':''}" onclick="pick('${n.id}')"><span class="dot ${n.s}"></span><span class="nm">${n.n}</span><span class="hz">${n.hz>0?n.hz+'hz':''}</span></div>`});
+  }
+  document.getElementById('nlist').innerHTML=h;
+}
+
+function rInspector(){
+  const n=sel;
+  const isMcu=n.g==='mcu';
+  let h=`<div class="icard"><div class="ik">node</div><div class="iv">${n.n}</div></div>`;
+  h+=`<div class="igrid">
+    <div class="icard"><div class="ik">frequency</div><div class="iv">${n.hz>0?n.hz+' Hz':'—'}</div></div>
+    <div class="icard"><div class="ik">status</div><div class="iv" style="color:var(--${n.s==='ok'?'green':n.s==='warn'?'amber':'rose'})">${n.s==='ok'?'active':n.s}</div></div>
+  </div>`;
+  if(!isMcu){
+    h+=`<div class="igrid">
+      <div class="icard"><div class="ik">cpu</div><div class="iv">${n.cpu}%</div></div>
+      <div class="icard"><div class="ik">memory</div><div class="iv">${n.mem>=1024?(n.mem/1024).toFixed(1)+' GB':n.mem+' MB'}</div></div>
+    </div>`;
+  } else {
+    h+=`<div class="icard"><div class="ik">executor</div><div class="iv sm">FreeRTOS task @ ${n.hz}Hz on STM32H743</div></div>`;
+    h+=`<div class="icard"><div class="ik">transport</div><div class="iv sm">DDS-XRCE via Serial UART4 @ 921600bd</div></div>`;
+  }
+  if(n.pub.length){
+    h+=`<div class="isec"><div class="isec-title">Published topics</div>`;
+    n.pub.forEach(p=>{
+      h+=`<div class="itopic"><span class="tn">${p.t}</span><span class="tt">${p.m}</span><span class="tf">${p.hz}hz</span></div>`;
+      h+=`<div style="padding:2px 0 6px">${p.qos==='be'?'<span class="qos-tag be">best-effort</span><span class="qos-tag vol">volatile</span>':p.qos==='rel'?'<span class="qos-tag rel">reliable</span>':p.qos==='rel-tl'?'<span class="qos-tag rel">reliable</span><span class="qos-tag tl">transient-local</span>':''}</div>`;
+    });
+    h+=`</div>`;
+  }
+  if(n.sub.length){
+    h+=`<div class="isec"><div class="isec-title">Subscribed topics</div>`;
+    n.sub.forEach(s=>{h+=`<div class="itopic"><span class="tn">${s.t}</span><span class="tt">${s.m}</span></div>`});
+    h+=`</div>`;
+  }
+  if(!isMcu && n.cpu>0){
+    h+=`<div class="isec"><div class="isec-title">Resource usage (60s)</div>`;
+    const bars=[{l:'CPU',v:n.cpu,mx:30,c:'var(--amber)'},{l:'Mem',v:Math.min(n.mem/5.12,100),mx:100,c:'var(--teal)'},{l:'Net I/O',v:Math.random()*40+5,mx:100,c:'var(--slate)'}];
+    bars.forEach(b=>{h+=`<div class="bar-row"><span class="bar-label">${b.l}</span><div class="bar-track"><div class="bar-fill" style="width:${(b.v/b.mx*100).toFixed(0)}%;background:${b.c}"></div></div></div>`});
+    h+=`</div>`;
+  }
+  document.getElementById('inspector').innerHTML=h;
+}
+
+function rCanvas(){
+  const vb='0 0 920 460';
+  let s=`<svg viewBox="${vb}" xmlns="http://www.w3.org/2000/svg">`;
+  E.forEach((e,i)=>{
+    const fn=N.find(n=>n.id===e.f),tn=N.find(n=>n.id===e.t);
+    if(!fn||!tn)return;
+    const x1=fn.x+fn.w,y1=fn.y+20,x2=tn.x,y2=tn.y+20;
+    const lit=sel.id===e.f||sel.id===e.t;
+    const col=lit?ec[e.c]:'var(--base-03)';
+    const mx=(x1+x2)/2;
+    s+=`<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" class="edge${lit?' lit':''}" stroke="${col}" opacity="${lit?0.7:0.2}"/>`;
+    if(lit){
+      s+=`<circle r="2.5" fill="${col}"><animateMotion dur="${1.2+Math.random()*0.8}s" repeatCount="indefinite"><mpath href="#p${i}"/></animateMotion></circle>`;
+      s+=`<path id="p${i}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" fill="none" stroke="none"/>`;
+    }
+  });
+  N.forEach(n=>{
+    const isSel=n===sel;
+    const gc={perception:'var(--green)',estimation:'var(--teal)',planning:'var(--slate)',control:'var(--rose)',mcu:'var(--amber)',system:'var(--base-04)'};
+    const c=gc[n.g]||'var(--base-04)';
+    const fill=isSel?c.replace('var(--','rgba(').replace(')','').replace('--green','94,166,93').replace('--teal','58,170,140').replace('--slate','91,123,180').replace('--rose','201,72,91').replace('--amber','212,146,58').replace('--base-04','52,60,74')+',.15)':'var(--base-01)';
+    s+=`<g class="nbox" style="cursor:pointer" onclick="pick('${n.id}')">`;
+    s+=`<rect x="${n.x}" y="${n.y}" width="${n.w}" height="40" fill="${fill}" stroke="${isSel?c:'var(--base-03)'}"/>`;
+    s+=`<circle cx="${n.x+9}" cy="${n.y+13}" r="2.5" fill="${n.s==='ok'?'var(--green)':'var(--rose)'}"/>`;
+    s+=`<text class="nlbl" x="${n.x+16}" y="${n.y+16}">${n.n.replace('/','')}</text>`;
+    const sub=n.g==='mcu'?`μROS ${n.hz}Hz`:`${n.hz}Hz · ${n.cpu}%`;
+    s+=`<text class="nsub" x="${n.x+16}" y="${n.y+30}">${sub}</text>`;
+    s+=`</g>`;
+  });
+  // layer labels
+  [{t:'SBC — ROS2 Jazzy',x:10,y:15},{t:'MCU — FreeRTOS / micro-ROS',x:640,y:358}].forEach(l=>{
+    s+=`<text x="${l.x}" y="${l.y}" font-family="JetBrains Mono" font-size="8" fill="var(--base-04)" font-weight="500">${l.t}</text>`;
+  });
+  s+=`<line x1="630" y1="345" x2="920" y2="345" stroke="var(--base-03)" stroke-width="1" stroke-dasharray="4,3"/>`;
+  s+=`</svg>`;
+  document.getElementById('cvs').innerHTML=s;
+}
+
+function pick(id){sel=N.find(n=>n.id===id);rList();rInspector();rCanvas()}
+
+// tabs
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',function(){
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+  this.classList.add('on');
+}));
+
+// live metrics
+let sec=4477;
+setInterval(()=>{
+  sec++;
+  const h=String(Math.floor(sec/3600)).padStart(2,'0');
+  const m=String(Math.floor((sec%3600)/60)).padStart(2,'0');
+  const s=String(sec%60).padStart(2,'0');
+  document.getElementById('ut').textContent=h+':'+m+':'+s;
+  document.getElementById('cpuv').textContent=(20+Math.random()*8).toFixed(0)+'%';
+  document.getElementById('memv').textContent=(1.3+Math.random()*0.15).toFixed(2)+' GB';
+  document.getElementById('latv').textContent=(0.6+Math.random()*0.5).toFixed(2)+'ms';
+},1000);
+
+rList();rInspector();rCanvas();
+</script>
+</body>
+</html>

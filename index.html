@@ -1,284 +1,2195 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark light">
 <title>rosmon — ROS2 System Monitor</title>
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS
+   Categorical palette validated with the data-viz six-checks validator against
+   both surfaces. Group order (perception→system) alternates warm/cool so every
+   adjacent pair survives protan/deutan simulation.
+     dark  · worst adjacent CVD ΔE 15.3 · normal-vision ΔE 17.6 · all ≥3:1
+     light · worst adjacent CVD ΔE 18.6 · normal-vision ΔE 19.5 · all ≥3:1
+   ═══════════════════════════════════════════════════════════════════════════ */
 :root {
-  --base-00:#0d1014; --base-01:#141920; --base-02:#1c2129;
-  --base-03:#252b35; --base-04:#343c4a; --base-05:#8892a2;
-  --base-06:#c8ced8; --base-07:#e8ecf0;
-  --amber:#d4923a; --amber-dim:rgba(212,146,58,0.12);
-  --teal:#3aaa8c; --teal-dim:rgba(58,170,140,0.1);
-  --rose:#c9485b; --rose-dim:rgba(201,72,91,0.1);
-  --slate:#5b7bb4; --slate-dim:rgba(91,123,180,0.1);
-  --green:#5ea65d; --green-dim:rgba(94,166,93,0.1);
+  color-scheme: dark;
+  /* surfaces */
+  --bg:#0a0d13; --surface-1:#141922; --surface-2:#1c2230; --surface-3:#252c3b;
+  --border:rgba(255,255,255,0.07); --border-strong:rgba(255,255,255,0.12);
+  --grid:#232936; --axis:#2e3648;
+  /* ink */
+  --text-1:#e8ecf3; --text-2:#9aa5b8; --text-3:#6b7689;
+  /* brand accent — UI chrome only, never a chart mark */
+  --accent:#dca63f; --accent-hi:#e9b85c; --accent-dim:rgba(220,166,63,0.13);
+  --accent-ring:rgba(220,166,63,0.30);
+  /* categorical series — chart marks */
+  --s-perception:#23a081; --s-estimation:#5183d4; --s-planning:#d4566a;
+  --s-control:#9a7bdd;    --s-mcu:#bd8620;        --s-system:#1f9cbe;
+  --s-7:#63a038; --s-8:#b04a80;
+  /* status — fixed, never themed, always shipped with icon + label */
+  --st-good:#0ca30c; --st-warn:#fab219; --st-serious:#ec835a; --st-crit:#d03b3b;
+  --st-good-bg:rgba(12,163,12,0.12); --st-warn-bg:rgba(250,178,25,0.12);
+  --st-serious-bg:rgba(236,131,90,0.12); --st-crit-bg:rgba(208,59,59,0.12);
+  /* sequential ramp — single hue, monotonic lightness (L .242→.749) */
+  --seq-1:#1b2028; --seq-2:#33301f; --seq-3:#4d431c; --seq-4:#6b5a18;
+  --seq-5:#8b7414; --seq-6:#ab8f15; --seq-7:#cbab2c;
+  /* elevation */
+  --shadow-1:0 1px 2px rgba(0,0,0,0.30);
+  --shadow-2:0 4px 12px -2px rgba(0,0,0,0.42), 0 2px 4px -2px rgba(0,0,0,0.30);
+  --shadow-3:0 14px 34px -8px rgba(0,0,0,0.58), 0 4px 10px -4px rgba(0,0,0,0.40);
+  /* type */
+  --ui:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  /* motion */
+  --ease:cubic-bezier(0.22,0.61,0.36,1);
+  --fast:120ms; --med:220ms;
 }
-@media(prefers-color-scheme:light){:root:not([data-theme="dark"]){
-  --base-00:#f4f5f7;--base-01:#eaecf0;--base-02:#dfe2e8;
-  --base-03:#cdd1da;--base-04:#b0b6c3;--base-05:#6b7486;
-  --base-06:#3a4050;--base-07:#1a1e28;
-}}
-:root[data-theme="dark"]{--base-00:#0d1014}
+@media (prefers-color-scheme: light) {
+  :root:where(:not([data-theme="dark"])) {
+    color-scheme: light;
+    --bg:#f4f5f8; --surface-1:#ffffff; --surface-2:#f7f8fa; --surface-3:#eceef3;
+    --border:rgba(11,13,19,0.10); --border-strong:rgba(11,13,19,0.18);
+    --grid:#e6e8ee; --axis:#cfd4de;
+    --text-1:#10141c; --text-2:#515b6d; --text-3:#7b8496;
+    --accent:#96670f; --accent-hi:#7d560b; --accent-dim:rgba(150,103,15,0.10);
+    --accent-ring:rgba(150,103,15,0.28);
+    --s-perception:#008f72; --s-estimation:#2f68c4; --s-planning:#c33049;
+    --s-control:#6f52c9;    --s-mcu:#9a6a12;        --s-system:#0080a8;
+    --s-7:#4a7d1e; --s-8:#a33169;
+    --seq-1:#fbf3e0; --seq-2:#f3e2b8; --seq-3:#e8cc8a; --seq-4:#d9b25c;
+    --seq-5:#c39733; --seq-6:#a67c18; --seq-7:#835f0d;
+    --shadow-1:0 1px 2px rgba(11,13,19,0.06);
+    --shadow-2:0 4px 12px -2px rgba(11,13,19,0.09), 0 2px 4px -2px rgba(11,13,19,0.06);
+    --shadow-3:0 14px 34px -8px rgba(11,13,19,0.16), 0 4px 10px -4px rgba(11,13,19,0.08);
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg:#f4f5f8; --surface-1:#ffffff; --surface-2:#f7f8fa; --surface-3:#eceef3;
+  --border:rgba(11,13,19,0.10); --border-strong:rgba(11,13,19,0.18);
+  --grid:#e6e8ee; --axis:#cfd4de;
+  --text-1:#10141c; --text-2:#515b6d; --text-3:#7b8496;
+  --accent:#96670f; --accent-hi:#7d560b; --accent-dim:rgba(150,103,15,0.10);
+  --accent-ring:rgba(150,103,15,0.28);
+  --s-perception:#008f72; --s-estimation:#2f68c4; --s-planning:#c33049;
+  --s-control:#6f52c9;    --s-mcu:#9a6a12;        --s-system:#0080a8;
+  --s-7:#4a7d1e; --s-8:#a33169;
+  --seq-1:#fbf3e0; --seq-2:#f3e2b8; --seq-3:#e8cc8a; --seq-4:#d9b25c;
+  --seq-5:#c39733; --seq-6:#a67c18; --seq-7:#835f0d;
+  --shadow-1:0 1px 2px rgba(11,13,19,0.06);
+  --shadow-2:0 4px 12px -2px rgba(11,13,19,0.09), 0 2px 4px -2px rgba(11,13,19,0.06);
+  --shadow-3:0 14px 34px -8px rgba(11,13,19,0.16), 0 4px 10px -4px rgba(11,13,19,0.08);
+}
+
+/* ─── base ────────────────────────────────────────────────────────────────── */
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'JetBrains Mono',monospace;background:var(--base-00);color:var(--base-06);font-size:12px;overflow:hidden;height:100vh}
-::selection{background:var(--amber);color:var(--base-00)}
+html,body{height:100%}
+body{
+  font-family:var(--ui); background:var(--bg); color:var(--text-1);
+  font-size:13px; line-height:1.5; overflow:hidden;
+  -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+}
+::selection{background:var(--accent-ring);color:var(--text-1)}
+.mono{font-family:var(--mono);font-variant-ligatures:none}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.ico{width:16px;height:16px;flex-shrink:0;display:block}
+.ico-sm{width:14px;height:14px}
+.ico-lg{width:18px;height:18px}
 
-.shell{display:grid;grid-template-rows:36px 1fr 28px;height:100vh}
+/* scrollbars */
+*{scrollbar-width:thin;scrollbar-color:var(--surface-3) transparent}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:var(--surface-3);border-radius:6px;
+  border:3px solid transparent;background-clip:content-box}
+*::-webkit-scrollbar-thumb:hover{background:var(--text-3);background-clip:content-box;
+  border:3px solid transparent}
 
-.topbar{background:var(--base-01);border-bottom:1px solid var(--base-03);display:flex;align-items:center;padding:0 12px;gap:12px;user-select:none}
-.topbar .logo{font-weight:700;font-size:13px;color:var(--amber);letter-spacing:-0.02em}
-.topbar .logo span{color:var(--base-05);font-weight:400}
-.topbar .sep{width:1px;height:16px;background:var(--base-03)}
-.tabs{display:flex;gap:0}
-.tab{padding:8px 14px;color:var(--base-05);cursor:pointer;border-bottom:2px solid transparent;font-size:11px;font-weight:500;transition:color 0.1s}
-.tab:hover{color:var(--base-06)}
-.tab.on{color:var(--amber);border-bottom-color:var(--amber)}
-.topbar .meta{margin-left:auto;display:flex;align-items:center;gap:14px;color:var(--base-05);font-size:10px}
-.topbar .meta .pulse{width:5px;height:5px;border-radius:50%;background:var(--green);animation:blink 2.5s infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:0.25}}
+/* ─── shell ───────────────────────────────────────────────────────────────── */
+.shell{display:grid;grid-template-rows:52px 1fr 30px;height:100vh;height:100dvh}
 
-.workspace{display:grid;grid-template-columns:200px 1fr 280px;overflow:hidden}
+/* ─── header ──────────────────────────────────────────────────────────────── */
+.topbar{
+  background:linear-gradient(to bottom,var(--surface-2),var(--surface-1));
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:6px;padding:0 14px;
+  user-select:none;position:relative;z-index:30;box-shadow:var(--shadow-1);
+}
+.brand{display:flex;align-items:center;gap:9px;padding-right:4px}
+.brand-mark{
+  width:26px;height:26px;border-radius:7px;display:grid;place-items:center;
+  background:linear-gradient(145deg,var(--accent),var(--accent-hi));
+  color:#0a0d13;box-shadow:0 2px 6px -1px var(--accent-ring);flex-shrink:0;
+}
+:root[data-theme="light"] .brand-mark,
+:root:where(:not([data-theme="dark"])) .brand-mark{color:#fff}
+.brand-name{font-size:14.5px;font-weight:700;letter-spacing:-0.02em;line-height:1.1}
+.brand-ver{font-family:var(--mono);font-size:10px;color:var(--text-3);
+  font-weight:500;letter-spacing:0}
+.vsep{width:1px;height:22px;background:var(--border);margin:0 8px;flex-shrink:0}
 
-.panel{background:var(--base-01);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--base-03) transparent}
-.panel-l{border-right:1px solid var(--base-02)}
-.panel-r{border-left:1px solid var(--base-02)}
-.panel-header{padding:10px 12px 6px;font-size:10px;color:var(--base-05);font-weight:600;letter-spacing:0.03em;position:sticky;top:0;background:var(--base-01);z-index:1}
+.tabs{display:flex;gap:2px;background:var(--surface-3);padding:3px;border-radius:9px}
+.tab{
+  display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;
+  color:var(--text-2);font-size:12.5px;font-weight:500;white-space:nowrap;
+  transition:color var(--fast) var(--ease),background var(--fast) var(--ease);
+}
+.tab:hover{color:var(--text-1);background:var(--surface-2)}
+.tab[aria-selected="true"]{
+  background:var(--surface-1);color:var(--text-1);font-weight:600;
+  box-shadow:var(--shadow-1);
+}
+.tab[aria-selected="true"] .ico{color:var(--accent)}
 
-.nlist{padding:0 6px 6px}
-.nitem{display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:4px;cursor:pointer;transition:background 0.08s;color:var(--base-06)}
-.nitem:hover{background:var(--base-02)}
-.nitem.sel{background:var(--amber-dim);color:var(--amber)}
-.nitem .dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
-.nitem .dot.ok{background:var(--green)}
-.nitem .dot.warn{background:var(--amber)}
-.nitem .dot.err{background:var(--rose)}
-.nitem .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
-.nitem .hz{color:var(--base-05);font-size:10px;flex-shrink:0}
-.grp{padding:8px 8px 3px;font-size:9px;color:var(--base-04);font-weight:600;letter-spacing:0.05em}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.chip{
+  display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;
+  background:var(--surface-3);border:1px solid var(--border);border-radius:7px;
+  font-family:var(--mono);font-size:10.5px;color:var(--text-2);font-weight:500;
+  white-space:nowrap;
+}
+.chip b{color:var(--text-1);font-weight:600}
+.chip .ico{color:var(--text-3)}
+.live-dot{
+  width:6px;height:6px;border-radius:50%;background:var(--st-good);flex-shrink:0;
+  box-shadow:0 0 0 3px var(--st-good-bg);animation:pulse 2.4s var(--ease) infinite;
+}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.82)}}
+.iconbtn{
+  width:30px;height:30px;display:grid;place-items:center;border-radius:7px;
+  color:var(--text-2);border:1px solid transparent;
+  transition:background var(--fast) var(--ease),color var(--fast) var(--ease),
+             border-color var(--fast) var(--ease);
+}
+.iconbtn:hover{background:var(--surface-3);color:var(--text-1);border-color:var(--border)}
+.iconbtn[aria-pressed="true"]{background:var(--accent-dim);color:var(--accent);
+  border-color:var(--accent-ring)}
 
-.canvas-area{background:var(--base-00);position:relative;overflow:hidden}
-.canvas-area svg{width:100%;height:100%}
-.edge{stroke:var(--base-03);stroke-width:1;fill:none}
-.edge.lit{stroke-width:1.5}
-.nbox rect{rx:4;ry:4;stroke-width:1}
-.nbox text{font-family:'JetBrains Mono',monospace}
-.nbox .nlbl{font-size:9.5px;font-weight:600;fill:var(--base-06)}
-.nbox .nsub{font-size:8px;fill:var(--base-05)}
-.particle{opacity:0}
+/* ─── workspace ───────────────────────────────────────────────────────────── */
+.workspace{display:grid;grid-template-columns:236px 1fr 324px;overflow:hidden;min-height:0}
+.panel{background:var(--surface-1);overflow-y:auto;overflow-x:hidden;min-height:0;
+  display:flex;flex-direction:column}
+.panel-l{border-right:1px solid var(--border)}
+.panel-r{border-left:1px solid var(--border)}
+.panel-head{
+  display:flex;align-items:center;gap:7px;padding:11px 14px 9px;
+  font-size:10.5px;font-weight:600;color:var(--text-3);
+  letter-spacing:0.07em;text-transform:uppercase;
+  position:sticky;top:0;background:var(--surface-1);z-index:4;
+  border-bottom:1px solid var(--border);
+}
+.panel-head .ico{color:var(--text-3)}
+.panel-head .count{
+  margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:0;
+  background:var(--surface-3);color:var(--text-2);padding:2px 7px;border-radius:5px;
+  text-transform:none;font-weight:600;
+}
 
-.inspector{padding:10px 12px}
-.icard{background:var(--base-02);border-radius:6px;padding:10px 12px;margin-bottom:8px}
-.icard .ik{font-size:9px;color:var(--base-05);margin-bottom:3px;font-weight:500}
-.icard .iv{font-size:15px;font-weight:700;color:var(--base-07)}
-.icard .iv.sm{font-size:12px;font-weight:500;color:var(--base-06)}
-.igrid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.itopic{padding:5px 0;border-bottom:1px solid var(--base-03);display:flex;justify-content:space-between;font-size:10px}
-.itopic:last-child{border:none}
-.itopic .tn{color:var(--slate)}
-.itopic .tt{color:var(--base-05)}
-.itopic .tf{color:var(--teal)}
-.isec{margin-top:10px}
-.isec .isec-title{font-size:9px;color:var(--base-05);font-weight:600;margin-bottom:6px;letter-spacing:0.03em}
-.qos-tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:500;margin:1px}
-.qos-tag.be{background:var(--teal-dim);color:var(--teal)}
-.qos-tag.rel{background:var(--amber-dim);color:var(--amber)}
-.qos-tag.vol{background:var(--base-03);color:var(--base-05)}
-.qos-tag.tl{background:var(--slate-dim);color:var(--slate)}
+/* ─── sidebar search + node list ──────────────────────────────────────────── */
+.search{position:relative;padding:10px 12px 8px}
+.search .ico{position:absolute;left:22px;top:50%;transform:translateY(-3px);
+  color:var(--text-3);pointer-events:none}
+.search input{
+  width:100%;height:32px;padding:0 10px 0 32px;border-radius:8px;
+  background:var(--surface-3);border:1px solid var(--border);color:var(--text-1);
+  font-family:var(--mono);font-size:11.5px;
+  transition:border-color var(--fast) var(--ease),box-shadow var(--fast) var(--ease);
+}
+.search input::placeholder{color:var(--text-3);font-family:var(--ui)}
+.search input:focus{outline:none;border-color:var(--accent-ring);
+  box-shadow:0 0 0 3px var(--accent-dim)}
 
-.bar-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}
-.bar-label{width:50px;font-size:9px;color:var(--base-05);text-align:right}
-.bar-track{flex:1;height:4px;background:var(--base-03);border-radius:2px;overflow:hidden}
-.bar-fill{height:100%;border-radius:2px;transition:width 0.4s}
+.nlist{padding:0 8px 12px;flex:1}
+.grp{
+  display:flex;align-items:center;gap:7px;padding:12px 6px 5px;
+  font-size:9.5px;font-weight:700;color:var(--text-3);
+  letter-spacing:0.08em;text-transform:uppercase;
+}
+.grp .swatch{width:8px;height:8px;border-radius:2.5px;flex-shrink:0}
+.grp .gcount{margin-left:auto;font-family:var(--mono);font-size:9.5px;
+  color:var(--text-3);letter-spacing:0;font-weight:600}
+.nitem{
+  display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+  padding:6px 8px;border-radius:7px;color:var(--text-1);
+  border-left:2px solid transparent;
+  transition:background var(--fast) var(--ease),border-color var(--fast) var(--ease);
+}
+.nitem:hover{background:var(--surface-2)}
+.nitem[aria-current="true"]{background:var(--accent-dim);border-left-color:var(--accent)}
+.nitem[aria-current="true"] .nm{color:var(--accent);font-weight:600}
+.nitem .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:var(--mono);font-size:11.5px;font-weight:500}
+.nitem .hz{font-family:var(--mono);font-size:10px;color:var(--text-3);
+  flex-shrink:0;font-variant-numeric:tabular-nums}
+.sdot{width:7px;height:7px;border-radius:50%;flex-shrink:0;position:relative}
+.sdot.ok{background:var(--st-good);box-shadow:0 0 0 2.5px var(--st-good-bg)}
+.sdot.warn{background:var(--st-warn);box-shadow:0 0 0 2.5px var(--st-warn-bg)}
+.sdot.err{background:var(--st-crit);box-shadow:0 0 0 2.5px var(--st-crit-bg)}
+.nempty{padding:24px 12px;text-align:center;color:var(--text-3);font-size:12px}
 
-.statusbar{background:var(--base-01);border-top:1px solid var(--base-02);display:flex;align-items:center;padding:0 12px;gap:16px;font-size:10px;color:var(--base-05)}
-.statusbar .si{display:flex;align-items:center;gap:4px}
-.statusbar .si .dot{width:4px;height:4px;border-radius:50%}
+/* ─── main view area ──────────────────────────────────────────────────────── */
+.main{background:var(--bg);overflow:hidden;min-height:0;display:flex;flex-direction:column}
+.view{flex:1;min-height:0;display:none;flex-direction:column}
+.view.on{display:flex}
+
+/* filter row — one row above everything it scopes */
+.filterbar{
+  display:flex;align-items:center;gap:8px;padding:10px 16px;
+  border-bottom:1px solid var(--border);background:var(--surface-1);
+  flex-shrink:0;flex-wrap:wrap;
+}
+.seg{display:flex;background:var(--surface-3);padding:2px;border-radius:7px;gap:1px}
+.seg button{
+  padding:5px 10px;border-radius:5px;font-size:11.5px;font-weight:500;
+  color:var(--text-2);display:flex;align-items:center;gap:5px;
+  transition:background var(--fast) var(--ease),color var(--fast) var(--ease);
+}
+.seg button:hover{color:var(--text-1)}
+.seg button[aria-pressed="true"]{background:var(--surface-1);color:var(--text-1);
+  font-weight:600;box-shadow:var(--shadow-1)}
+.filter-label{font-size:11px;color:var(--text-3);font-weight:600;
+  text-transform:uppercase;letter-spacing:0.06em}
+
+/* ─── cards / grid ────────────────────────────────────────────────────────── */
+.scroller{flex:1;overflow-y:auto;min-height:0;padding:16px}
+.cgrid{display:grid;gap:14px}
+.cgrid.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.cgrid.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.card{
+  background:var(--surface-1);border:1px solid var(--border);border-radius:11px;
+  box-shadow:var(--shadow-1);display:flex;flex-direction:column;min-width:0;
+  overflow:hidden;
+}
+.card-head{display:flex;align-items:flex-start;gap:10px;padding:13px 15px 0}
+.card-title{font-size:13px;font-weight:600;letter-spacing:-0.01em;line-height:1.3}
+.card-sub{font-size:11px;color:var(--text-3);margin-top:2px;line-height:1.4}
+.card-head .ico{color:var(--text-3);margin-top:1px}
+.card-tools{margin-left:auto;display:flex;gap:2px;flex-shrink:0}
+.card-body{padding:10px 15px 14px;flex:1;min-width:0}
+.card.span2{grid-column:span 2}
+
+/* chart host — sized to include the x-axis band, never a nested scrollbar */
+.chart{width:100%;min-width:0}
+.chart-lg{height:260px}
+.chart-md{height:212px}
+.chart-sm{height:168px}
+
+/* ─── stat tiles ──────────────────────────────────────────────────────────── */
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.tile{
+  background:var(--surface-1);border:1px solid var(--border);border-radius:11px;
+  padding:13px 15px;box-shadow:var(--shadow-1);position:relative;overflow:hidden;
+  min-width:0;
+}
+.tile-label{display:flex;align-items:center;gap:6px;font-size:11px;
+  color:var(--text-3);font-weight:500}
+.tile-label .ico{color:var(--text-3)}
+.tile-val{
+  font-size:27px;font-weight:600;letter-spacing:-0.025em;line-height:1.15;
+  margin-top:7px;color:var(--text-1);
+  /* proportional figures — tabular only in columns */
+}
+.tile-val .unit{font-size:14px;font-weight:500;color:var(--text-3);margin-left:2px}
+.tile-foot{display:flex;align-items:center;gap:5px;margin-top:5px;font-size:11px;
+  color:var(--text-3)}
+.tile-spark{position:absolute;right:11px;bottom:10px;width:96px;height:38px;opacity:.92;
+  pointer-events:none}
+.delta{display:inline-flex;align-items:center;gap:3px;font-weight:600;
+  font-variant-numeric:tabular-nums}
+.delta.up{color:var(--st-good)} .delta.down{color:var(--st-crit)}
+.delta.flat{color:var(--text-3)}
+
+/* ─── status pill: icon + label, never colour alone ───────────────────────── */
+.pill{
+  display:inline-flex;align-items:center;gap:5px;padding:2px 8px 2px 6px;
+  border-radius:20px;font-size:10.5px;font-weight:600;white-space:nowrap;
+  border:1px solid transparent;
+}
+.pill .ico{width:12px;height:12px}
+.pill.good{background:var(--st-good-bg);color:var(--st-good);
+  border-color:color-mix(in srgb,var(--st-good) 28%,transparent)}
+.pill.warn{background:var(--st-warn-bg);color:var(--st-warn);
+  border-color:color-mix(in srgb,var(--st-warn) 28%,transparent)}
+.pill.serious{background:var(--st-serious-bg);color:var(--st-serious);
+  border-color:color-mix(in srgb,var(--st-serious) 28%,transparent)}
+.pill.crit{background:var(--st-crit-bg);color:var(--st-crit);
+  border-color:color-mix(in srgb,var(--st-crit) 28%,transparent)}
+:root[data-theme="light"] .pill.warn,
+:root:where(:not([data-theme="dark"])) .pill.warn{color:#8a5c00}
+:root[data-theme="light"] .pill.serious,
+:root:where(:not([data-theme="dark"])) .pill.serious{color:#9c4416}
+
+/* ─── legend (always present for ≥2 series) ───────────────────────────────── */
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;padding:2px 0 8px}
+.legend button{
+  display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--text-2);
+  padding:2px 4px;border-radius:5px;transition:color var(--fast) var(--ease);
+}
+.legend button:hover{color:var(--text-1)}
+.legend button[aria-pressed="false"]{opacity:.38}
+.legend .key{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.legend .key.line{height:3px;border-radius:2px;width:14px}
+
+/* ─── tables (the table-view twin) ────────────────────────────────────────── */
+.tbl-wrap{overflow:auto;border:1px solid var(--border);border-radius:9px;
+  background:var(--surface-1)}
+table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:11.5px}
+table.dt th{
+  position:sticky;top:0;z-index:2;background:var(--surface-2);
+  text-align:left;padding:9px 12px;font-size:10px;font-weight:700;
+  color:var(--text-3);text-transform:uppercase;letter-spacing:0.06em;
+  border-bottom:1px solid var(--border);white-space:nowrap;user-select:none;
+}
+table.dt th.sortable{cursor:pointer}
+table.dt th.sortable:hover{color:var(--text-1)}
+table.dt th .ico{display:inline-block;vertical-align:-2px;margin-left:3px;
+  width:12px;height:12px;opacity:.55}
+table.dt td{padding:8px 12px;border-bottom:1px solid var(--border);
+  color:var(--text-2);white-space:nowrap}
+table.dt tbody tr:last-child td{border-bottom:none}
+table.dt tbody tr:hover td{background:var(--surface-2)}
+table.dt td.num{text-align:right;font-family:var(--mono);
+  font-variant-numeric:tabular-nums;color:var(--text-1)}
+table.dt td.name{font-family:var(--mono);color:var(--text-1);font-weight:500}
+.tkey{display:inline-block;width:9px;height:9px;border-radius:2.5px;
+  margin-right:7px;vertical-align:-1px}
+.msgtype{font-family:var(--mono);font-size:10.5px;color:var(--text-3)}
+
+/* ─── bar meter (track = lighter step of the same ramp) ───────────────────── */
+.meter{display:flex;align-items:center;gap:9px}
+.meter-track{flex:1;height:5px;background:var(--surface-3);border-radius:3px;
+  overflow:hidden;min-width:40px}
+.meter-fill{height:100%;border-radius:3px;transition:width var(--med) var(--ease)}
+.meter-val{font-family:var(--mono);font-size:10.5px;color:var(--text-2);
+  font-variant-numeric:tabular-nums;width:46px;text-align:right;flex-shrink:0}
+
+/* ─── node graph ──────────────────────────────────────────────────────────── */
+.graph-wrap{flex:1;position:relative;overflow:hidden;min-height:0;background:var(--bg)}
+#cvs{position:absolute;inset:0}
+#cvs>svg{width:100%;height:100%;display:block}
+.gdots{position:absolute;inset:0;pointer-events:none;opacity:.5;
+  background-image:radial-gradient(circle,var(--axis) 0.9px,transparent 0.9px);
+  background-size:22px 22px}
+.edge{fill:none;stroke-linecap:round;transition:stroke-opacity var(--med) var(--ease),
+  stroke-width var(--med) var(--ease)}
+.nbox{cursor:pointer}
+.nbox .plate{transition:filter var(--med) var(--ease)}
+.nbox:hover .plate{filter:brightness(1.14)}
+.nbox .nlbl{font-family:var(--mono);font-size:10px;font-weight:600;fill:var(--text-1)}
+.nbox .nsub{font-family:var(--mono);font-size:8.5px;fill:var(--text-3)}
+.nbox .ngrp{font-family:var(--ui);font-size:7.5px;font-weight:700;
+  letter-spacing:0.09em;text-transform:uppercase}
+.lane-lbl{font-family:var(--ui);font-size:8.5px;font-weight:700;fill:var(--text-3);
+  letter-spacing:0.11em;text-transform:uppercase}
+.graph-legend{
+  position:absolute;left:14px;bottom:14px;display:flex;flex-wrap:wrap;gap:5px 13px;
+  background:color-mix(in srgb,var(--surface-1) 88%,transparent);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  border:1px solid var(--border);border-radius:9px;padding:8px 12px;
+  box-shadow:var(--shadow-2);max-width:calc(100% - 28px);
+}
+.graph-legend .li{display:flex;align-items:center;gap:6px;font-size:10.5px;
+  color:var(--text-2);font-weight:500}
+.graph-legend .key{width:9px;height:9px;border-radius:2.5px}
+.graph-hint{
+  position:absolute;right:14px;top:14px;display:flex;align-items:center;gap:6px;
+  background:color-mix(in srgb,var(--surface-1) 88%,transparent);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  border:1px solid var(--border);border-radius:8px;padding:6px 10px;
+  font-size:10.5px;color:var(--text-3);box-shadow:var(--shadow-1);
+}
+kbd{font-family:var(--mono);font-size:9.5px;background:var(--surface-3);
+  border:1px solid var(--border);border-bottom-width:2px;border-radius:4px;
+  padding:1px 5px;color:var(--text-2)}
+
+/* ─── inspector ───────────────────────────────────────────────────────────── */
+.inspector{padding:13px 14px 20px;display:flex;flex-direction:column;gap:12px}
+.insp-hero{
+  background:linear-gradient(150deg,var(--surface-2),var(--surface-1));
+  border:1px solid var(--border);border-radius:11px;padding:13px 14px;
+  position:relative;overflow:hidden;
+}
+.insp-hero::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+  background:var(--c,var(--accent))}
+.insp-name{font-family:var(--mono);font-size:14px;font-weight:600;
+  letter-spacing:-0.02em;word-break:break-all;line-height:1.3}
+.insp-meta{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+.tag{
+  display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:6px;
+  background:var(--surface-3);font-size:10.5px;font-weight:600;color:var(--text-2);
+}
+.kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.kv-item{background:var(--surface-2);border:1px solid var(--border);
+  border-radius:9px;padding:9px 11px;min-width:0}
+.kv-k{font-size:10px;color:var(--text-3);font-weight:500;display:flex;
+  align-items:center;gap:5px}
+.kv-v{font-size:17px;font-weight:600;letter-spacing:-0.02em;margin-top:3px;
+  color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kv-v .unit{font-size:11px;color:var(--text-3);font-weight:500;margin-left:2px}
+.kv-v.sm{font-size:11.5px;font-weight:500;font-family:var(--mono);
+  color:var(--text-2);white-space:normal;line-height:1.45}
+.isec-title{
+  display:flex;align-items:center;gap:7px;font-size:10px;font-weight:700;
+  color:var(--text-3);letter-spacing:0.07em;text-transform:uppercase;
+  margin-bottom:8px;
+}
+.isec-title .ico{color:var(--text-3)}
+.isec-title .n{margin-left:auto;font-family:var(--mono);letter-spacing:0;
+  background:var(--surface-3);padding:1px 6px;border-radius:4px;text-transform:none}
+.topic{background:var(--surface-2);border:1px solid var(--border);border-radius:9px;
+  padding:9px 11px;margin-bottom:7px}
+.topic-top{display:flex;align-items:baseline;gap:7px}
+.topic-top .tkey{flex-shrink:0;margin-right:0}
+.topic-name{font-family:var(--mono);font-size:11px;font-weight:600;flex:1;
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.topic-hz{font-family:var(--mono);font-size:10px;color:var(--text-2);
+  font-variant-numeric:tabular-nums;flex-shrink:0}
+.topic-type{font-family:var(--mono);font-size:10px;color:var(--text-3);
+  margin-top:2px;display:block}
+.qos{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}
+.qos-tag{padding:1.5px 7px;border-radius:5px;font-size:9.5px;font-weight:600;
+  background:var(--surface-3);color:var(--text-2);border:1px solid var(--border)}
+.qos-tag.rel{background:var(--accent-dim);color:var(--accent);
+  border-color:var(--accent-ring)}
+.insp-empty{text-align:center;color:var(--text-3);font-size:12px;padding:20px 8px}
+
+/* ─── event log ───────────────────────────────────────────────────────────── */
+.log{display:flex;flex-direction:column;gap:1px;font-family:var(--mono);font-size:11px}
+.log-row{display:grid;grid-template-columns:62px 74px 1fr;gap:10px;padding:6px 10px;
+  border-radius:6px;align-items:baseline}
+.log-row:hover{background:var(--surface-2)}
+.log-t{color:var(--text-3);font-variant-numeric:tabular-nums}
+.log-lvl{font-weight:700;font-size:9.5px;letter-spacing:0.04em;
+  display:flex;align-items:center;gap:4px}
+.log-lvl .ico{width:11px;height:11px}
+.log-lvl.info{color:var(--text-2)} .log-lvl.good{color:var(--st-good)}
+.log-lvl.warn{color:var(--st-warn)} .log-lvl.crit{color:var(--st-crit)}
+:root[data-theme="light"] .log-lvl.warn,
+:root:where(:not([data-theme="dark"])) .log-lvl.warn{color:#8a5c00}
+.log-msg{color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.log-msg b{color:var(--text-1);font-weight:600}
+
+/* ─── status bar ──────────────────────────────────────────────────────────── */
+.statusbar{
+  background:var(--surface-1);border-top:1px solid var(--border);
+  display:flex;align-items:center;gap:0;padding:0 12px;font-size:10.5px;
+  color:var(--text-2);overflow-x:auto;overflow-y:hidden;user-select:none;
+}
+.statusbar::-webkit-scrollbar{height:0}
+.si{display:flex;align-items:center;gap:6px;padding:0 11px;white-space:nowrap;
+  height:100%;border-right:1px solid var(--border)}
+.si:last-child{border-right:none}
+.si .ico{width:13px;height:13px;color:var(--text-3)}
+.si b{font-family:var(--mono);color:var(--text-1);font-weight:600;
+  font-variant-numeric:tabular-nums}
+.si.push{margin-left:auto}
+
+/* ─── responsive ──────────────────────────────────────────────────────────── */
+@media (max-width:1400px){
+  .workspace{grid-template-columns:212px 1fr 292px}
+  .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:1100px){
+  .workspace{grid-template-columns:1fr}
+  .panel-l,.panel-r{display:none}
+  .cgrid.two,.cgrid.three{grid-template-columns:1fr}
+  .card.span2{grid-column:span 1}
+  .brand-ver{display:none}
+}
+@media (max-width:760px){
+  .shell{grid-template-rows:auto 1fr 30px}
+  .topbar{flex-wrap:wrap;height:auto;padding:8px 12px;gap:8px}
+  .topbar-right{width:100%;margin-left:0;overflow-x:auto}
+  .tabs{order:3;width:100%}
+  .tab{flex:1;justify-content:center}
+  .vsep{display:none}
+  .tiles{grid-template-columns:1fr}
+  .scroller{padding:12px}
+  .tab span{display:none}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:0.01ms!important;animation-iteration-count:1!important;
+    transition-duration:0.01ms!important}
+}
+@media print{
+  .topbar,.statusbar,.panel-l,.panel-r,.filterbar,.graph-hint{display:none}
+}
 </style>
 </head>
 <body>
+
+<!-- ═══ icon sprite · Lucide-style 1.75 stroke, currentColor, zero runtime dep ═══ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+<defs>
+<g id="i-base" fill="none" stroke="currentColor" stroke-width="1.75"
+   stroke-linecap="round" stroke-linejoin="round"></g>
+</defs>
+<symbol id="i-graph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="5" cy="6" r="2.4"/><circle cx="19" cy="6" r="2.4"/><circle cx="12" cy="18" r="2.4"/>
+  <path d="M7.4 6h9.2M6.2 8.1l4.5 7.9M17.8 8.1l-4.5 7.9"/>
+</symbol>
+<symbol id="i-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>
+</symbol>
+<symbol id="i-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M2 12h4l3-8 4 16 3-8h6"/>
+</symbol>
+<symbol id="i-cpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="5" y="5" width="14" height="14" rx="2.5"/><rect x="9" y="9" width="6" height="6" rx="1"/>
+  <path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/>
+</symbol>
+<symbol id="i-chip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M9 9h6v6H9z"/>
+</symbol>
+<symbol id="i-radio" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="2"/>
+  <path d="M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4"/>
+  <path d="M4.9 19.1a10 10 0 0 1 0-14.2M19.1 4.9a10 10 0 0 1 0 14.2"/>
+</symbol>
+<symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/>
+</symbol>
+<symbol id="i-gauge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M3.5 18a10 10 0 1 1 17 0"/><path d="m12 14 4.5-4.5"/><circle cx="12" cy="15" r="1.6"/>
+</symbol>
+<symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="9"/><path d="M12 7v5.2l3.2 2"/>
+</symbol>
+<symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="9"/><path d="m8.2 12.2 2.6 2.6 5-5.4"/>
+</symbol>
+<symbol id="i-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M10.3 3.9 2.4 17.4A2 2 0 0 0 4.1 20.4h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>
+  <path d="M12 9v4.2M12 17h.01"/>
+</symbol>
+<symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="9"/><path d="M12 7.6v5M12 16.2h.01"/>
+</symbol>
+<symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="10.8" cy="10.8" r="6.8"/><path d="m20 20-4.4-4.4"/>
+</symbol>
+<symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="4.2"/>
+  <path d="M12 2v2.4M12 19.6V22M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2 12h2.4M19.6 12H22M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"/>
+</symbol>
+<symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M20.5 14.3A8.5 8.5 0 1 1 9.7 3.5a6.8 6.8 0 0 0 10.8 10.8Z"/>
+</symbol>
+<symbol id="i-table" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="3" y="4" width="18" height="16" rx="2.2"/><path d="M3 9.6h18M9.2 9.6V20"/>
+</symbol>
+<symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M3 20h18"/><path d="M6.5 20v-6M12 20V6.5M17.5 20v-9"/>
+</symbol>
+<symbol id="i-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 19V5M6 11l6-6 6 6"/>
+</symbol>
+<symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 5v14M6 13l6 6 6-6"/>
+</symbol>
+<symbol id="i-sort" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="m8 9 4-4 4 4M8 15l4 4 4-4"/>
+</symbol>
+<symbol id="i-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M13 2 4.2 12.9a1 1 0 0 0 .8 1.6h5.2l-1.2 7.5 8.8-10.9a1 1 0 0 0-.8-1.6h-5.2L13 2Z"/>
+</symbol>
+<symbol id="i-db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <ellipse cx="12" cy="5.8" rx="8" ry="3.3"/>
+  <path d="M4 5.8v12.4c0 1.8 3.6 3.3 8 3.3s8-1.5 8-3.3V5.8"/><path d="M4 12c0 1.8 3.6 3.3 8 3.3s8-1.5 8-3.3"/>
+</symbol>
+<symbol id="i-net" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="8.6" y="2.8" width="6.8" height="6.8" rx="1.6"/>
+  <rect x="2" y="14.4" width="6.4" height="6.4" rx="1.6"/>
+  <rect x="15.6" y="14.4" width="6.4" height="6.4" rx="1.6"/>
+  <path d="M12 9.6v3.2M5.2 14.4v-1.6h13.6v1.6"/>
+</symbol>
+<symbol id="i-ram" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="2.5" y="7" width="19" height="10" rx="2"/>
+  <path d="M6.5 17v3M11 17v3M15.5 17v3M6.5 11v2M11 11v2M15.5 11v2"/>
+</symbol>
+<symbol id="i-arrows" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4 8h13l-3-3M20 16H7l3 3"/>
+</symbol>
+<symbol id="i-hist" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M3 21h18"/><rect x="4" y="13" width="3.4" height="8" rx="1"/>
+  <rect x="10.3" y="7" width="3.4" height="14" rx="1"/><rect x="16.6" y="16" width="3.4" height="5" rx="1"/>
+</symbol>
+<symbol id="i-therm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M14 14.8V4.6a2.4 2.4 0 0 0-4.8 0v10.2a4.4 4.4 0 1 0 4.8 0Z"/>
+</symbol>
+</svg>
+
 <div class="shell">
-  <div class="topbar">
-    <div class="logo">rosmon <span>v2.4.1</span></div>
-    <div class="sep"></div>
-    <div class="tabs">
-      <div class="tab on" data-t="graph">Graph</div>
-      <div class="tab" data-t="topics">Topics</div>
-      <div class="tab" data-t="diag">Diagnostics</div>
-    </div>
-    <div class="meta">
-      <span>DDS: CycloneDDS 0.10.5</span>
-      <span>Domain: 0</span>
-      <span>ROS2 Jazzy</span>
-      <span class="pulse"></span>
-    </div>
-  </div>
 
+  <!-- ═══ header ═══ -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="2.6"/>
+          <path d="M12 3.2v3.4M12 17.4v3.4M4.4 7.6l2.9 1.7M16.7 14.7l2.9 1.7M4.4 16.4l2.9-1.7M16.7 9.3l2.9-1.7"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-name">rosmon</div>
+        <div class="brand-ver">v2.4.1</div>
+      </div>
+    </div>
+
+    <div class="vsep" role="presentation"></div>
+
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button class="tab" role="tab" aria-selected="true" data-t="graph" id="tab-graph">
+        <svg class="ico"><use href="#i-graph"/></svg><span>Graph</span>
+      </button>
+      <button class="tab" role="tab" aria-selected="false" data-t="topics" id="tab-topics">
+        <svg class="ico"><use href="#i-list"/></svg><span>Topics</span>
+      </button>
+      <button class="tab" role="tab" aria-selected="false" data-t="diag" id="tab-diag">
+        <svg class="ico"><use href="#i-pulse"/></svg><span>Diagnostics</span>
+      </button>
+    </nav>
+
+    <div class="topbar-right">
+      <span class="chip"><svg class="ico ico-sm"><use href="#i-db"/></svg>CycloneDDS <b>0.10.5</b></span>
+      <span class="chip"><svg class="ico ico-sm"><use href="#i-layers"/></svg>Domain <b>0</b></span>
+      <span class="chip"><svg class="ico ico-sm"><use href="#i-radio"/></svg>ROS 2 <b>Jazzy</b></span>
+      <span class="chip"><span class="live-dot"></span>live</span>
+      <button class="iconbtn" id="themeBtn" title="Toggle theme" aria-label="Toggle colour theme">
+        <svg class="ico" id="themeIcon"><use href="#i-sun"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ═══ workspace ═══ -->
   <div class="workspace">
-    <div class="panel panel-l">
-      <div class="panel-header">Nodes (23 active)</div>
+
+    <!-- sidebar -->
+    <aside class="panel panel-l">
+      <div class="panel-head">
+        <svg class="ico ico-sm"><use href="#i-layers"/></svg>Nodes
+        <span class="count" id="nodeCount">15</span>
+      </div>
+      <div class="search">
+        <svg class="ico ico-sm"><use href="#i-search"/></svg>
+        <input type="search" id="nsearch" placeholder="Filter nodes…" aria-label="Filter nodes">
+      </div>
       <div class="nlist" id="nlist"></div>
-    </div>
-    <div class="canvas-area" id="cvs"></div>
-    <div class="panel panel-r">
-      <div class="panel-header">Inspector</div>
+    </aside>
+
+    <!-- main -->
+    <main class="main">
+
+      <!-- ── GRAPH ── -->
+      <section class="view on" id="v-graph" role="tabpanel" aria-labelledby="tab-graph">
+        <div class="graph-wrap" id="graphWrap">
+          <div class="gdots" aria-hidden="true"></div>
+          <div id="cvs"></div>
+          <div class="graph-hint">
+            <svg class="ico ico-sm"><use href="#i-arrows"/></svg>
+            Click a node to inspect · <kbd>↑</kbd><kbd>↓</kbd> to step
+          </div>
+          <div class="graph-legend" id="graphLegend"></div>
+        </div>
+      </section>
+
+      <!-- ── TOPICS ── -->
+      <section class="view" id="v-topics" role="tabpanel" aria-labelledby="tab-topics">
+        <div class="filterbar">
+          <span class="filter-label">Group</span>
+          <div class="seg" id="topicGroupFilter"></div>
+          <div class="vsep"></div>
+          <span class="filter-label">Window</span>
+          <div class="seg" id="topicRange">
+            <button data-r="60" aria-pressed="true">60s</button>
+            <button data-r="300" aria-pressed="false">5m</button>
+            <button data-r="900" aria-pressed="false">15m</button>
+          </div>
+          <div class="seg" style="margin-left:auto" id="topicViewMode">
+            <button data-v="chart" aria-pressed="true">
+              <svg class="ico ico-sm"><use href="#i-chart"/></svg>Charts</button>
+            <button data-v="table" aria-pressed="false">
+              <svg class="ico ico-sm"><use href="#i-table"/></svg>Table</button>
+          </div>
+        </div>
+
+        <div class="scroller">
+          <div class="tiles" style="margin-bottom:14px" id="topicTiles"></div>
+
+          <div id="topicCharts">
+            <div class="cgrid two" style="margin-bottom:14px">
+              <div class="card span2">
+                <div class="card-head">
+                  <svg class="ico"><use href="#i-pulse"/></svg>
+                  <div>
+                    <div class="card-title">Publish rate by group</div>
+                    <div class="card-sub">Aggregate messages per second, sampled at 1 Hz</div>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="legend" id="lg-rate"></div>
+                  <div class="chart chart-lg" id="ch-rate"></div>
+                </div>
+              </div>
+            </div>
+            <div class="cgrid two">
+              <div class="card">
+                <div class="card-head">
+                  <svg class="ico"><use href="#i-net"/></svg>
+                  <div>
+                    <div class="card-title">Bandwidth by topic</div>
+                    <div class="card-sub">Top 10 topics · KiB/s over the selected window</div>
+                  </div>
+                </div>
+                <div class="card-body"><div class="chart chart-lg" id="ch-bw"></div></div>
+              </div>
+              <div class="card">
+                <div class="card-head">
+                  <svg class="ico"><use href="#i-hist"/></svg>
+                  <div>
+                    <div class="card-title">Message size distribution</div>
+                    <div class="card-sub">Serialised payload bytes across all active topics</div>
+                  </div>
+                </div>
+                <div class="card-body"><div class="chart chart-lg" id="ch-size"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <div id="topicTable" style="display:none">
+            <div class="tbl-wrap">
+              <table class="dt" id="tTable">
+                <thead><tr>
+                  <th class="sortable" data-k="t">Topic <svg class="ico"><use href="#i-sort"/></svg></th>
+                  <th class="sortable" data-k="m">Type <svg class="ico"><use href="#i-sort"/></svg></th>
+                  <th class="sortable" data-k="pubName">Publisher <svg class="ico"><use href="#i-sort"/></svg></th>
+                  <th class="sortable" data-k="subs" style="text-align:right">Subs <svg class="ico"><use href="#i-sort"/></svg></th>
+                  <th class="sortable" data-k="hz" style="text-align:right">Rate (Hz) <svg class="ico"><use href="#i-sort"/></svg></th>
+                  <th class="sortable" data-k="bw" style="text-align:right">KiB/s <svg class="ico"><use href="#i-sort"/></svg></th>
+                  <th class="sortable" data-k="size" style="text-align:right">Bytes/msg <svg class="ico"><use href="#i-sort"/></svg></th>
+                  <th>QoS</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── DIAGNOSTICS ── -->
+      <section class="view" id="v-diag" role="tabpanel" aria-labelledby="tab-diag">
+        <div class="filterbar">
+          <span class="filter-label">Window</span>
+          <div class="seg" id="diagRange">
+            <button data-r="60" aria-pressed="true">60s</button>
+            <button data-r="300" aria-pressed="false">5m</button>
+            <button data-r="900" aria-pressed="false">15m</button>
+          </div>
+          <div class="seg" style="margin-left:auto" id="diagViewMode">
+            <button data-v="chart" aria-pressed="true">
+              <svg class="ico ico-sm"><use href="#i-chart"/></svg>Charts</button>
+            <button data-v="table" aria-pressed="false">
+              <svg class="ico ico-sm"><use href="#i-table"/></svg>Table</button>
+          </div>
+        </div>
+
+        <div class="scroller">
+          <div class="tiles" style="margin-bottom:14px" id="diagTiles"></div>
+
+          <div id="diagCharts">
+            <div class="cgrid two" style="margin-bottom:14px">
+              <div class="card span2">
+                <div class="card-head">
+                  <svg class="ico"><use href="#i-cpu"/></svg>
+                  <div>
+                    <div class="card-title">SBC resource utilisation</div>
+                    <div class="card-sub">Jetson Orin NX · CPU load, memory pressure and package temperature</div>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="legend" id="lg-res"></div>
+                  <div class="chart chart-lg" id="ch-res"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="cgrid two" style="margin-bottom:14px">
+              <div class="card">
+                <div class="card-head">
+                  <svg class="ico"><use href="#i-zap"/></svg>
+                  <div>
+                    <div class="card-title">MCU→SBC round-trip latency</div>
+                    <div class="card-sub">DDS-XRCE over serial · 4,096 samples</div>
+                  </div>
+                </div>
+                <div class="card-body"><div class="chart chart-lg" id="ch-lat"></div></div>
+              </div>
+              <div class="card">
+                <div class="card-head">
+                  <svg class="ico"><use href="#i-gauge"/></svg>
+                  <div>
+                    <div class="card-title">Executor budget by node</div>
+                    <div class="card-sub">Share of each node's deadline consumed per cycle</div>
+                  </div>
+                </div>
+                <div class="card-body"><div class="chart chart-lg" id="ch-budget"></div></div>
+              </div>
+            </div>
+
+            <div class="cgrid two">
+              <div class="card">
+                <div class="card-head">
+                  <svg class="ico"><use href="#i-clock"/></svg>
+                  <div>
+                    <div class="card-title">Callback jitter heatmap</div>
+                    <div class="card-sub">Deviation from nominal period · darker is tighter</div>
+                  </div>
+                </div>
+                <div class="card-body"><div class="chart chart-md" id="ch-heat"></div></div>
+              </div>
+              <div class="card">
+                <div class="card-head">
+                  <svg class="ico"><use href="#i-list"/></svg>
+                  <div>
+                    <div class="card-title">Event log</div>
+                    <div class="card-sub">Lifecycle transitions and diagnostic messages</div>
+                  </div>
+                  <div class="card-tools">
+                    <span class="pill good"><svg class="ico"><use href="#i-check"/></svg>nominal</span>
+                  </div>
+                </div>
+                <div class="card-body"><div class="log" id="eventLog"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <div id="diagTable" style="display:none">
+            <div class="tbl-wrap">
+              <table class="dt" id="dTable">
+                <thead><tr>
+                  <th>Node</th><th>Group</th><th>Status</th>
+                  <th style="text-align:right">Rate (Hz)</th>
+                  <th style="text-align:right">CPU %</th>
+                  <th style="text-align:right">Memory</th>
+                  <th style="text-align:right">Budget %</th>
+                  <th style="text-align:right">Jitter (ms)</th>
+                </tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- inspector -->
+    <aside class="panel panel-r">
+      <div class="panel-head">
+        <svg class="ico ico-sm"><use href="#i-search"/></svg>Inspector
+      </div>
       <div class="inspector" id="inspector"></div>
-    </div>
+    </aside>
   </div>
 
-  <div class="statusbar">
-    <span class="si"><span class="dot" style="background:var(--green)"></span> micro-ROS Agent: connected</span>
-    <span class="si">MCU: STM32H743 @ 480MHz</span>
-    <span class="si">Transport: Serial 921600bd</span>
-    <span class="si">Uptime: <span id="ut">01:14:37</span></span>
-    <span class="si" style="margin-left:auto">CPU: <span id="cpuv">24%</span></span>
-    <span class="si">Mem: <span id="memv">1.34 GB</span></span>
-    <span class="si">Latency MCU→SBC: <span id="latv">0.82ms</span></span>
-  </div>
+  <!-- ═══ status bar ═══ -->
+  <footer class="statusbar">
+    <span class="si"><span class="live-dot"></span>micro-ROS Agent <b>connected</b></span>
+    <span class="si"><svg class="ico"><use href="#i-chip"/></svg>STM32H743 <b>480 MHz</b></span>
+    <span class="si"><svg class="ico"><use href="#i-net"/></svg>Serial <b>921600 bd</b></span>
+    <span class="si"><svg class="ico"><use href="#i-clock"/></svg>Uptime <b id="ut">01:14:37</b></span>
+    <span class="si push"><svg class="ico"><use href="#i-cpu"/></svg>CPU <b id="cpuv">24%</b></span>
+    <span class="si"><svg class="ico"><use href="#i-ram"/></svg>Mem <b id="memv">1.34 GB</b></span>
+    <span class="si"><svg class="ico"><use href="#i-zap"/></svg>MCU→SBC <b id="latv">0.82 ms</b></span>
+  </footer>
 </div>
 
+<script src="vendor/echarts.min.js"></script>
 <script>
+"use strict";
+/* ═══════════════════════════════════════════════════════════════════════════
+   rosmon — ROS 2 system monitor
+   Demo data models a typical mobile-robot stack: SBC nodes over CycloneDDS
+   plus two MCU control nodes bridged by the micro-ROS Agent.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── groups: colour follows the entity, fixed, never assigned by rank ─────── */
+const GROUPS = [
+  {id:'perception', label:'Perception',      short:'PERCEP', v:'--s-perception'},
+  {id:'estimation', label:'State Estimation',short:'ESTIM',  v:'--s-estimation'},
+  {id:'planning',   label:'Planning',        short:'PLAN',   v:'--s-planning'},
+  {id:'control',    label:'Control',         short:'CTRL',   v:'--s-control'},
+  {id:'mcu',        label:'MCU (micro-ROS)', short:'MCU',    v:'--s-mcu'},
+  {id:'system',     label:'System',          short:'SYS',    v:'--s-system'},
+];
+const G = Object.fromEntries(GROUPS.map(g => [g.id, g]));
+
+/* msg type → representative serialised size in bytes */
+const MSG_BYTES = {
+  LaserScan:2884, Image:921600, PointCloud2:307200, Imu:324, Odometry:720,
+  OccupancyGrid:262144, TFMessage:216, Path:4800, Twist:48, JointState:208,
+  Float64:8, DiagnosticArray:1460, DiagnosticStatus:512,
+};
+
 const N = [
-  {id:'lidar',n:'/lidar_driver',g:'perception',s:'ok',hz:10,cpu:3.1,mem:82,pub:[{t:'/scan',m:'LaserScan',hz:10,qos:'be'}],sub:[],x:60,y:50,w:110},
-  {id:'cam',n:'/camera_node',g:'perception',s:'ok',hz:30,cpu:12.4,mem:340,pub:[{t:'/image_raw',m:'Image',hz:30,qos:'be'},{t:'/depth/points',m:'PointCloud2',hz:15,qos:'be'}],sub:[],x:60,y:130,w:110},
-  {id:'imu',n:'/imu_filter',g:'perception',s:'ok',hz:200,cpu:1.8,mem:14,pub:[{t:'/imu/data',m:'Imu',hz:200,qos:'be'}],sub:[{t:'/imu/data_raw',m:'Imu',hz:400}],x:60,y:210,w:110},
-  {id:'ekf',n:'/robot_localization',g:'estimation',s:'ok',hz:100,cpu:4.6,mem:48,pub:[{t:'/odometry/filtered',m:'Odometry',hz:100,qos:'be'}],sub:[{t:'/imu/data',m:'Imu'},{t:'/odom',m:'Odometry'}],x:260,y:130,w:130},
-  {id:'slam',n:'/slam_toolbox',g:'estimation',s:'ok',hz:5,cpu:22.3,mem:512,pub:[{t:'/map',m:'OccupancyGrid',hz:0.2,qos:'rel-tl'},{t:'/tf',m:'TFMessage',hz:5,qos:'be'}],sub:[{t:'/scan',m:'LaserScan'},{t:'/odometry/filtered',m:'Odometry'}],x:260,y:50,w:120},
-  {id:'gplan',n:'/planner_server',g:'planning',s:'ok',hz:1,cpu:3.8,mem:96,pub:[{t:'/plan',m:'Path',hz:1,qos:'rel'}],sub:[{t:'/map',m:'OccupancyGrid'},{t:'/scan',m:'LaserScan'}],x:460,y:50,w:120},
-  {id:'ctrl',n:'/controller_server',g:'planning',s:'ok',hz:20,cpu:5.2,mem:64,pub:[{t:'/cmd_vel',m:'Twist',hz:20,qos:'be'}],sub:[{t:'/plan',m:'Path'},{t:'/odometry/filtered',m:'Odometry'}],x:460,y:150,w:130},
-  {id:'bt',n:'/bt_navigator',g:'planning',s:'ok',hz:10,cpu:1.9,mem:28,pub:[],sub:[],x:460,y:250,w:110},
-  {id:'mux',n:'/twist_mux',g:'control',s:'ok',hz:50,cpu:0.4,mem:8,pub:[{t:'/cmd_vel_out',m:'Twist',hz:50,qos:'be'}],sub:[{t:'/cmd_vel',m:'Twist'}],x:650,y:150,w:100},
-  {id:'base',n:'/base_driver',g:'control',s:'ok',hz:100,cpu:2.2,mem:18,pub:[{t:'/odom',m:'Odometry',hz:100,qos:'be'},{t:'/joint_states',m:'JointState',hz:100,qos:'be'}],sub:[{t:'/cmd_vel_out',m:'Twist'}],x:650,y:260,w:100},
-  {id:'pid_fl',n:'/pid_front_left',g:'mcu',s:'ok',hz:1000,cpu:0,mem:0,pub:[{t:'/wheel/fl/state',m:'Float64',hz:100,qos:'be'}],sub:[{t:'/wheel/fl/cmd',m:'Float64'}],x:650,y:370,w:110},
-  {id:'pid_fr',n:'/pid_front_right',g:'mcu',s:'ok',hz:1000,cpu:0,mem:0,pub:[{t:'/wheel/fr/state',m:'Float64',hz:100,qos:'be'}],sub:[{t:'/wheel/fr/cmd',m:'Float64'}],x:780,y:370,w:115},
-  {id:'diag',n:'/diagnostic_agg',g:'system',s:'ok',hz:1,cpu:0.3,mem:12,pub:[{t:'/diagnostics_agg',m:'DiagnosticArray',hz:1,qos:'rel'}],sub:[{t:'/diagnostics',m:'DiagnosticStatus'}],x:260,y:340,w:120},
-  {id:'lm',n:'/lifecycle_manager',g:'system',s:'ok',hz:1,cpu:0.2,mem:6,pub:[],sub:[],x:260,y:260,w:130},
-  {id:'uros',n:'/micro_ros_agent',g:'system',s:'ok',hz:0,cpu:1.1,mem:24,pub:[],sub:[],x:650,y:50,w:120},
+  {id:'lidar', n:'/lidar_driver', g:'perception', s:'ok', hz:10, cpu:3.1, mem:82, jit:0.42, budget:18,
+   pub:[{t:'/scan', m:'LaserScan', hz:10, qos:'be'}], sub:[], x:48, y:56, w:150},
+  {id:'cam', n:'/camera_node', g:'perception', s:'ok', hz:30, cpu:12.4, mem:340, jit:0.88, budget:47,
+   pub:[{t:'/image_raw', m:'Image', hz:30, qos:'be'},{t:'/depth/points', m:'PointCloud2', hz:15, qos:'be'}],
+   sub:[], x:48, y:142, w:150},
+  {id:'imu', n:'/imu_filter', g:'perception', s:'ok', hz:200, cpu:1.8, mem:14, jit:0.06, budget:12,
+   pub:[{t:'/imu/data', m:'Imu', hz:200, qos:'be'}],
+   sub:[{t:'/imu/data_raw', m:'Imu', hz:400}], x:48, y:228, w:150},
+  {id:'ekf', n:'/robot_localization', g:'estimation', s:'ok', hz:100, cpu:4.6, mem:48, jit:0.11, budget:24,
+   pub:[{t:'/odometry/filtered', m:'Odometry', hz:100, qos:'be'}],
+   sub:[{t:'/imu/data', m:'Imu'},{t:'/odom', m:'Odometry'}], x:252, y:142, w:150},
+  {id:'slam', n:'/slam_toolbox', g:'estimation', s:'warn', hz:5, cpu:22.3, mem:512, jit:2.4, budget:78,
+   pub:[{t:'/map', m:'OccupancyGrid', hz:0.2, qos:'rel-tl'},{t:'/tf', m:'TFMessage', hz:5, qos:'be'}],
+   sub:[{t:'/scan', m:'LaserScan'},{t:'/odometry/filtered', m:'Odometry'}], x:252, y:56, w:150},
+  {id:'gplan', n:'/planner_server', g:'planning', s:'ok', hz:1, cpu:3.8, mem:96, jit:1.2, budget:31,
+   pub:[{t:'/plan', m:'Path', hz:1, qos:'rel'}],
+   sub:[{t:'/map', m:'OccupancyGrid'},{t:'/scan', m:'LaserScan'}], x:470, y:56, w:150},
+  {id:'ctrl', n:'/controller_server', g:'planning', s:'ok', hz:20, cpu:5.2, mem:64, jit:0.34, budget:41,
+   pub:[{t:'/cmd_vel', m:'Twist', hz:20, qos:'be'}],
+   sub:[{t:'/plan', m:'Path'},{t:'/odometry/filtered', m:'Odometry'}], x:470, y:160, w:150},
+  {id:'bt', n:'/bt_navigator', g:'planning', s:'ok', hz:10, cpu:1.9, mem:28, jit:0.52, budget:16,
+   pub:[], sub:[{t:'/plan', m:'Path'}], x:470, y:264, w:150},
+  {id:'mux', n:'/twist_mux', g:'control', s:'ok', hz:50, cpu:0.4, mem:8, jit:0.09, budget:7,
+   pub:[{t:'/cmd_vel_out', m:'Twist', hz:50, qos:'be'}],
+   sub:[{t:'/cmd_vel', m:'Twist'}], x:688, y:160, w:150},
+  {id:'base', n:'/base_driver', g:'control', s:'ok', hz:100, cpu:2.2, mem:18, jit:0.15, budget:22,
+   pub:[{t:'/odom', m:'Odometry', hz:100, qos:'be'},{t:'/joint_states', m:'JointState', hz:100, qos:'be'}],
+   sub:[{t:'/cmd_vel_out', m:'Twist'}], x:688, y:264, w:150},
+  {id:'pid_fl', n:'/pid_front_left', g:'mcu', s:'ok', hz:1000, cpu:0, mem:0, jit:0.02, budget:34,
+   pub:[{t:'/wheel/fl/state', m:'Float64', hz:100, qos:'be'}],
+   sub:[{t:'/wheel/fl/cmd', m:'Float64'}], x:604, y:392, w:140},
+  {id:'pid_fr', n:'/pid_front_right', g:'mcu', s:'ok', hz:1000, cpu:0, mem:0, jit:0.02, budget:36,
+   pub:[{t:'/wheel/fr/state', m:'Float64', hz:100, qos:'be'}],
+   sub:[{t:'/wheel/fr/cmd', m:'Float64'}], x:768, y:392, w:146},
+  {id:'diag', n:'/diagnostic_agg', g:'system', s:'ok', hz:1, cpu:0.3, mem:12, jit:0.7, budget:5,
+   pub:[{t:'/diagnostics_agg', m:'DiagnosticArray', hz:1, qos:'rel'}],
+   sub:[{t:'/diagnostics', m:'DiagnosticStatus'}], x:252, y:350, w:150},
+  {id:'lm', n:'/lifecycle_manager', g:'system', s:'ok', hz:1, cpu:0.2, mem:6, jit:0.4, budget:3,
+   pub:[], sub:[], x:252, y:264, w:150},
+  {id:'uros', n:'/micro_ros_agent', g:'system', s:'ok', hz:0, cpu:1.1, mem:24, jit:0.05, budget:14,
+   pub:[], sub:[], x:688, y:56, w:150},
 ];
 
 const E = [
-  {f:'lidar',t:'slam',c:0},{f:'lidar',t:'gplan',c:0},
-  {f:'cam',t:'ekf',c:1},{f:'imu',t:'ekf',c:2},
-  {f:'ekf',t:'slam',c:3},{f:'ekf',t:'ctrl',c:3},
-  {f:'slam',t:'gplan',c:0},{f:'gplan',t:'ctrl',c:1},
-  {f:'ctrl',t:'mux',c:4},{f:'mux',t:'base',c:4},
-  {f:'base',t:'ekf',c:2},{f:'base',t:'pid_fl',c:5},{f:'base',t:'pid_fr',c:5},
+  {f:'lidar', t:'slam'},  {f:'lidar', t:'gplan'},
+  {f:'cam',   t:'ekf'},   {f:'imu',   t:'ekf'},
+  {f:'ekf',   t:'slam'},  {f:'ekf',   t:'ctrl'},
+  {f:'slam',  t:'gplan'}, {f:'gplan', t:'ctrl'},
+  {f:'ctrl',  t:'mux'},   {f:'mux',   t:'base'},
+  {f:'base',  t:'ekf'},   {f:'uros',  t:'pid_fl'}, {f:'uros', t:'pid_fr'},
+  {f:'base',  t:'bt'},
 ];
-const ec = ['var(--green)','var(--slate)','var(--amber)','var(--teal)','var(--rose)','var(--base-05)'];
-const gn = {perception:'Perception',estimation:'State Estimation',planning:'Planning',control:'Control',mcu:'MCU (micro-ROS)',system:'System'};
-let sel = N[0];
 
-function rList(){
-  let h='';
-  const gs={};N.forEach(n=>{if(!gs[n.g])gs[n.g]=[];gs[n.g].push(n)});
-  for(const[g,ns]of Object.entries(gs)){
-    h+=`<div class="grp">${(gn[g]||g).toUpperCase()}</div>`;
-    ns.forEach(n=>{h+=`<div class="nitem ${n===sel?'sel':''}" onclick="pick('${n.id}')"><span class="dot ${n.s}"></span><span class="nm">${n.n}</span><span class="hz">${n.hz>0?n.hz+'hz':''}</span></div>`});
-  }
-  document.getElementById('nlist').innerHTML=h;
-}
-
-function rInspector(){
-  const n=sel;
-  const isMcu=n.g==='mcu';
-  let h=`<div class="icard"><div class="ik">node</div><div class="iv">${n.n}</div></div>`;
-  h+=`<div class="igrid">
-    <div class="icard"><div class="ik">frequency</div><div class="iv">${n.hz>0?n.hz+' Hz':'—'}</div></div>
-    <div class="icard"><div class="ik">status</div><div class="iv" style="color:var(--${n.s==='ok'?'green':n.s==='warn'?'amber':'rose'})">${n.s==='ok'?'active':n.s}</div></div>
-  </div>`;
-  if(!isMcu){
-    h+=`<div class="igrid">
-      <div class="icard"><div class="ik">cpu</div><div class="iv">${n.cpu}%</div></div>
-      <div class="icard"><div class="ik">memory</div><div class="iv">${n.mem>=1024?(n.mem/1024).toFixed(1)+' GB':n.mem+' MB'}</div></div>
-    </div>`;
-  } else {
-    h+=`<div class="icard"><div class="ik">executor</div><div class="iv sm">FreeRTOS task @ ${n.hz}Hz on STM32H743</div></div>`;
-    h+=`<div class="icard"><div class="ik">transport</div><div class="iv sm">DDS-XRCE via Serial UART4 @ 921600bd</div></div>`;
-  }
-  if(n.pub.length){
-    h+=`<div class="isec"><div class="isec-title">Published topics</div>`;
-    n.pub.forEach(p=>{
-      h+=`<div class="itopic"><span class="tn">${p.t}</span><span class="tt">${p.m}</span><span class="tf">${p.hz}hz</span></div>`;
-      h+=`<div style="padding:2px 0 6px">${p.qos==='be'?'<span class="qos-tag be">best-effort</span><span class="qos-tag vol">volatile</span>':p.qos==='rel'?'<span class="qos-tag rel">reliable</span>':p.qos==='rel-tl'?'<span class="qos-tag rel">reliable</span><span class="qos-tag tl">transient-local</span>':''}</div>`;
+/* ─── derive the topic table once ─────────────────────────────────────────── */
+const TOPICS = (() => {
+  const out = [];
+  N.forEach(node => node.pub.forEach(p => {
+    const size = MSG_BYTES[p.m] ?? 256;
+    const subs = N.filter(o => o.sub.some(s => s.t === p.t)).length;
+    out.push({
+      t:p.t, m:p.m, hz:p.hz, qos:p.qos, size, subs,
+      pub:node.id, pubName:node.n, g:node.g,
+      bw:(size * p.hz) / 1024,      // KiB/s
     });
-    h+=`</div>`;
-  }
-  if(n.sub.length){
-    h+=`<div class="isec"><div class="isec-title">Subscribed topics</div>`;
-    n.sub.forEach(s=>{h+=`<div class="itopic"><span class="tn">${s.t}</span><span class="tt">${s.m}</span></div>`});
-    h+=`</div>`;
-  }
-  if(!isMcu && n.cpu>0){
-    h+=`<div class="isec"><div class="isec-title">Resource usage (60s)</div>`;
-    const bars=[{l:'CPU',v:n.cpu,mx:30,c:'var(--amber)'},{l:'Mem',v:Math.min(n.mem/5.12,100),mx:100,c:'var(--teal)'},{l:'Net I/O',v:Math.random()*40+5,mx:100,c:'var(--slate)'}];
-    bars.forEach(b=>{h+=`<div class="bar-row"><span class="bar-label">${b.l}</span><div class="bar-track"><div class="bar-fill" style="width:${(b.v/b.mx*100).toFixed(0)}%;background:${b.c}"></div></div></div>`});
-    h+=`</div>`;
-  }
-  document.getElementById('inspector').innerHTML=h;
+  }));
+  return out.sort((a,b) => b.bw - a.bw);
+})();
+
+/* ─── theme ───────────────────────────────────────────────────────────────── */
+const store = {
+  get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
+};
+const prefersLight = () =>
+  window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+
+let theme = store.get('rosmon-theme', prefersLight() ? 'light' : 'dark');
+
+function applyTheme(t) {
+  theme = t;
+  document.documentElement.setAttribute('data-theme', t);
+  document.getElementById('themeIcon')
+    .querySelector('use').setAttribute('href', t === 'dark' ? '#i-sun' : '#i-moon');
+  document.getElementById('themeBtn')
+    .setAttribute('aria-label', t === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+  store.set('rosmon-theme', t);
+  // repaint every chart against the new surface
+  requestAnimationFrame(() => { restyleCharts(); renderGraph(); });
 }
 
-function rCanvas(){
-  const vb='0 0 920 460';
-  let s=`<svg viewBox="${vb}" xmlns="http://www.w3.org/2000/svg">`;
-  E.forEach((e,i)=>{
-    const fn=N.find(n=>n.id===e.f),tn=N.find(n=>n.id===e.t);
-    if(!fn||!tn)return;
-    const x1=fn.x+fn.w,y1=fn.y+20,x2=tn.x,y2=tn.y+20;
-    const lit=sel.id===e.f||sel.id===e.t;
-    const col=lit?ec[e.c]:'var(--base-03)';
-    const mx=(x1+x2)/2;
-    s+=`<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" class="edge${lit?' lit':''}" stroke="${col}" opacity="${lit?0.7:0.2}"/>`;
-    if(lit){
-      s+=`<circle r="2.5" fill="${col}"><animateMotion dur="${1.2+Math.random()*0.8}s" repeatCount="indefinite"><mpath href="#p${i}"/></animateMotion></circle>`;
-      s+=`<path id="p${i}" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" fill="none" stroke="none"/>`;
+/* read a design token off :root so JS never hard-codes a colour */
+const tok = (name) =>
+  getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const groupColor = (gid) => tok(G[gid].v);
+
+/* rgba() from a hex token — for area washes at ~10% */
+function wash(hex, a) {
+  const h = hex.replace('#','');
+  const n = parseInt(h.length === 3 ? h.split('').map(c=>c+c).join('') : h, 16);
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+}
+
+const fmt = {
+  hz:  v => v >= 1 ? v.toFixed(v % 1 ? 1 : 0) : v.toFixed(2),
+  mem: mb => mb >= 1024 ? (mb/1024).toFixed(2)+' GB' : Math.round(mb)+' MB',
+  bytes: b => b >= 1048576 ? (b/1048576).toFixed(1)+' MiB'
+            : b >= 1024 ? (b/1024).toFixed(1)+' KiB' : b+' B',
+  kib: v => v >= 1024 ? (v/1024).toFixed(1)+' MiB/s' : v.toFixed(1)+' KiB/s',
+  compact: v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'K' : String(v),
+};
+
+const STATUS = {
+  ok:      {cls:'good', icon:'#i-check', label:'nominal',  v:'--st-good'},
+  warn:    {cls:'warn', icon:'#i-warn',  label:'degraded', v:'--st-warn'},
+  err:     {cls:'crit', icon:'#i-alert', label:'error',    v:'--st-crit'},
+};
+const esc = s => String(s).replace(/[&<>"]/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+let sel = N[0];
+const charts = {};
+let winSec = { topics: 60, diag: 60 };
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CHART FOUNDATION
+   Mark specs are enforced here once, so no individual chart can drift:
+   lines 2px round-cap · area wash 10% · bars ≤24px with a 4px rounded
+   data-end square at the baseline · solid hairline gridlines · markers ≥8px
+   with a 2px surface ring · text always in text tokens, never a series colour.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function chartTheme() {
+  return {
+    surface: tok('--surface-1'),
+    grid:    tok('--grid'),
+    axis:    tok('--axis'),
+    t1:      tok('--text-1'),
+    t2:      tok('--text-2'),
+    t3:      tok('--text-3'),
+    ui:      "Inter, system-ui, sans-serif",
+    mono:    "'JetBrains Mono', ui-monospace, monospace",
+  };
+}
+
+function baseOption() {
+  const c = chartTheme();
+  return {
+    animation: !reduceMotion,
+    animationDuration: 420,
+    animationEasing: 'cubicOut',
+    textStyle: { fontFamily: c.ui, fontSize: 11 },
+    grid: { left: 8, right: 14, top: 10, bottom: 4, containLabel: true },
+    tooltip: {
+      backgroundColor: c.surface,
+      borderColor: tok('--border-strong'),
+      borderWidth: 1,
+      padding: [9, 12],
+      textStyle: { color: c.t1, fontSize: 11.5, fontFamily: c.ui },
+      extraCssText: 'box-shadow:0 12px 28px -6px rgba(0,0,0,.30);border-radius:9px;',
+      // hit targets stay generous; the tooltip enhances, never gates a value
+      confine: true,
+    },
+    xAxis: {
+      axisLine:  { lineStyle: { color: c.axis, width: 1 } },   // solid hairline
+      axisTick:  { show: false },
+      axisLabel: { color: c.t3, fontSize: 10, fontFamily: c.mono },
+      splitLine: { show: false },
+    },
+    yAxis: {
+      axisLine:  { show: false },
+      axisTick:  { show: false },
+      axisLabel: { color: c.t3, fontSize: 10, fontFamily: c.mono },
+      splitLine: { lineStyle: { color: c.grid, width: 1, type: 'solid' } },
+    },
+  };
+}
+
+/* line series — 2px, round cap, 10% area wash, markers ≥8px with surface ring */
+function lineSeries(name, data, color, opts = {}) {
+  const c = chartTheme();
+  return {
+    name, type: 'line', data,
+    smooth: 0.28, smoothMonotone: 'x',
+    showSymbol: false,
+    symbol: 'circle', symbolSize: 8,
+    lineStyle: { width: 2, color, cap: 'round', join: 'round' },
+    itemStyle: { color, borderWidth: 2, borderColor: c.surface }, // 2px surface ring
+    emphasis: { focus: 'series', scale: 1.25 },
+    areaStyle: opts.area === false ? undefined : { color: wash(color, 0.10) },
+    z: opts.z ?? 2,
+    ...opts.extra,
+  };
+}
+
+/* column series — ≤24px, 4px rounded cap, square at the baseline */
+function columnSeries(name, data, color, opts = {}) {
+  const c = chartTheme();
+  return {
+    name, type: 'bar', data,
+    barMaxWidth: 24,
+    barCategoryGap: '34%',
+    itemStyle: {
+      color,
+      borderRadius: [4, 4, 0, 0],
+      // 1px surface border each side == the 2px surface gap between fills
+      borderColor: opts.stacked ? c.surface : 'transparent',
+      borderWidth: opts.stacked ? 1 : 0,
+    },
+    emphasis: { focus: 'series', itemStyle: { color } },
+    ...opts.extra,
+  };
+}
+
+/* horizontal bar — 4px rounded data-end, square at the baseline */
+function barSeries(name, data, opts = {}) {
+  return {
+    name, type: 'bar', data,
+    barMaxWidth: 20,
+    barCategoryGap: '38%',
+    itemStyle: { borderRadius: [0, 4, 4, 0] },
+    emphasis: { focus: 'self' },
+    ...opts.extra,
+  };
+}
+
+/* mount / update a chart, keyed so a theme flip can restyle every one */
+function mount(id, builder) {
+  const el = document.getElementById(id);
+  if (!el || !el.clientWidth) return null;
+  let inst = charts[id]?.inst;
+  if (!inst || inst.isDisposed()) {
+    inst = echarts.init(el, null, { renderer: 'canvas' });
+    charts[id] = { inst, builder };
+  } else {
+    charts[id].builder = builder;
+  }
+  inst.setOption(builder(), { notMerge: true });
+  return inst;
+}
+function restyleCharts() {
+  Object.values(charts).forEach(({ inst, builder }) => {
+    if (inst && !inst.isDisposed()) inst.setOption(builder(), { notMerge: true });
+  });
+}
+const resizeAll = () => Object.values(charts).forEach(({ inst }) => {
+  if (inst && !inst.isDisposed()) inst.resize();
+});
+
+/* ─── custom HTML legend — identity never rests on colour alone ────────────── */
+function renderLegend(hostId, items, chartId) {
+  const host = document.getElementById(hostId);
+  if (!host) return;
+  host.innerHTML = items.map(it => `
+    <button type="button" aria-pressed="true" data-name="${esc(it.name)}">
+      <span class="key ${it.line ? 'line' : ''}" style="background:${it.color}"></span>
+      ${esc(it.label)}
+    </button>`).join('');
+  host.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const on = btn.getAttribute('aria-pressed') === 'true';
+      btn.setAttribute('aria-pressed', String(!on));
+      charts[chartId]?.inst?.dispatchAction({
+        type: on ? 'legendUnSelect' : 'legendSelect', name: btn.dataset.name,
+      });
+    });
+  });
+}
+
+/* sparkline for stat tiles — de-emphasis hue, no axes, no chrome */
+function sparkline(el, data, color) {
+  if (!el) return;
+  const w = 96, h = 38, pad = 3;
+  const mn = Math.min(...data), mx = Math.max(...data), sp = (mx - mn) || 1;
+  const pts = data.map((v, i) => [
+    pad + i * (w - pad * 2) / (data.length - 1),
+    h - pad - ((v - mn) / sp) * (h - pad * 2 - 4),
+  ]);
+  const d = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('');
+  const area = `${d}L${pts.at(-1)[0].toFixed(1)},${h}L${pts[0][0].toFixed(1)},${h}Z`;
+  el.innerHTML =
+    `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true">
+       <path d="${area}" fill="${wash(color, 0.10)}"/>
+       <path d="${d}" fill="none" stroke="${color}" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round"/>
+       <circle cx="${pts.at(-1)[0].toFixed(1)}" cy="${pts.at(-1)[1].toFixed(1)}" r="2.6"
+               fill="${color}" stroke="${tok('--surface-1')}" stroke-width="2"/>
+     </svg>`;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIVE SERIES — a deterministic-ish walk so the demo reads like real telemetry
+   ═══════════════════════════════════════════════════════════════════════════ */
+const MAXPTS = 900;
+const series = {
+  t: [], cpu: [], mem: [], temp: [], lat: [],
+  rate: Object.fromEntries(GROUPS.map(g => [g.id, []])),
+};
+const nominalRate = gid =>
+  N.filter(n => n.g === gid).reduce((a, n) => a + n.pub.reduce((s, p) => s + p.hz, 0), 0);
+
+(function seed() {
+  const now = Date.now();
+  let cpu = 24, mem = 41, temp = 52, lat = 0.82;
+  for (let i = MAXPTS; i > 0; i--) {
+    cpu  = Math.min(96, Math.max(6,  cpu  + (Math.random() - 0.5) * 3.4));
+    mem  = Math.min(92, Math.max(24, mem  + (Math.random() - 0.5) * 0.9));
+    temp = Math.min(88, Math.max(38, temp + (Math.random() - 0.5) * 0.7));
+    lat  = Math.min(4.2, Math.max(0.28, lat + (Math.random() - 0.5) * 0.14));
+    series.t.push(now - i * 1000);
+    series.cpu.push(+cpu.toFixed(1));
+    series.mem.push(+mem.toFixed(1));
+    series.temp.push(+temp.toFixed(1));
+    series.lat.push(+lat.toFixed(2));
+    GROUPS.forEach(g => {
+      const base = nominalRate(g.id);
+      series.rate[g.id].push(+Math.max(0, base * (0.94 + Math.random() * 0.12)).toFixed(1));
+    });
+  }
+})();
+
+function pushSample() {
+  const last = k => series[k].at(-1);
+  const step = (v, d, lo, hi) => +Math.min(hi, Math.max(lo, v + (Math.random() - 0.5) * d)).toFixed(2);
+  series.t.push(Date.now());
+  series.cpu.push(step(last('cpu'), 3.4, 6, 96));
+  series.mem.push(step(last('mem'), 0.9, 24, 92));
+  series.temp.push(step(last('temp'), 0.7, 38, 88));
+  series.lat.push(step(last('lat'), 0.14, 0.28, 4.2));
+  GROUPS.forEach(g => {
+    const base = nominalRate(g.id);
+    series.rate[g.id].push(+Math.max(0, base * (0.94 + Math.random() * 0.12)).toFixed(1));
+  });
+  Object.keys(series).forEach(k => {
+    if (Array.isArray(series[k]) && series[k].length > MAXPTS) series[k].shift();
+  });
+  GROUPS.forEach(g => {
+    if (series.rate[g.id].length > MAXPTS) series.rate[g.id].shift();
+  });
+}
+
+const slice = (arr, n) => arr.slice(Math.max(0, arr.length - n));
+const pairs = (vals, n) => {
+  const ts = slice(series.t, n), vs = slice(vals, n);
+  return vs.map((v, i) => [ts[i], v]);
+};
+
+/* latency histogram — a right-skewed distribution around ~0.8 ms */
+const LAT_SAMPLES = (() => {
+  const out = [];
+  for (let i = 0; i < 4096; i++) {
+    const u = Math.random(), v = Math.random();
+    const g = Math.sqrt(-2 * Math.log(u || 1e-9)) * Math.cos(2 * Math.PI * v);
+    out.push(Math.max(0.16, 0.82 + g * 0.24 + (Math.random() < 0.035 ? Math.random() * 1.9 : 0)));
+  }
+  return out.sort((a, b) => a - b);
+})();
+const pct = p => LAT_SAMPLES[Math.floor(LAT_SAMPLES.length * p)];
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NODE GRAPH
+   ═══════════════════════════════════════════════════════════════════════════ */
+const NH = 46;                                   // node plate height
+const byId = id => N.find(n => n.id === id);
+
+function renderGraph() {
+  const c = chartTheme();
+  const laneY = 372;
+  let s = `<svg viewBox="0 0 962 470" preserveAspectRatio="xMidYMid meet" role="img"
+                aria-label="ROS 2 node graph">
+    <defs>
+      <marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5.5" markerHeight="5.5"
+              orient="auto-start-reverse">
+        <path d="M0.5 0.8 L7 4 L0.5 7.2 Z" fill="${c.axis}"/>
+      </marker>
+      <marker id="ah-lit" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6"
+              orient="auto-start-reverse">
+        <path d="M0.5 0.8 L7 4 L0.5 7.2 Z" fill="${tok('--accent')}"/>
+      </marker>
+    </defs>`;
+
+  /* the MCU lane — a hairline, never dashed decoration around data */
+  s += `<line x1="24" y1="${laneY}" x2="938" y2="${laneY}" stroke="${c.grid}" stroke-width="1"/>
+        <text class="lane-lbl" x="24" y="${laneY - 10}">SBC · ROS 2 Jazzy · CycloneDDS</text>
+        <text class="lane-lbl" x="24" y="${laneY + 22}">MCU · STM32H743 · FreeRTOS · micro-ROS</text>`;
+
+  /* edges first, so plates sit above them */
+  E.forEach((e, i) => {
+    const a = byId(e.f), b = byId(e.t);
+    if (!a || !b) return;
+    const lit = sel.id === e.f || sel.id === e.t;
+    const x1 = a.x + a.w, y1 = a.y + NH / 2, x2 = b.x - 7, y2 = b.y + NH / 2;
+    const mx = (x1 + x2) / 2;
+    const d = `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+    const col = lit ? tok('--accent') : c.axis;
+    s += `<path d="${d}" class="edge" stroke="${col}" stroke-width="${lit ? 2 : 1.25}"
+                stroke-opacity="${lit ? 0.95 : 0.34}"
+                marker-end="url(#${lit ? 'ah-lit' : 'ah'})"/>`;
+    if (lit && !reduceMotion) {
+      s += `<path id="pp${i}" d="${d}" fill="none" stroke="none"/>
+            <circle r="3" fill="${col}">
+              <animateMotion dur="${(1.1 + Math.random() * 0.7).toFixed(2)}s" repeatCount="indefinite">
+                <mpath href="#pp${i}"/>
+              </animateMotion>
+            </circle>`;
     }
   });
-  N.forEach(n=>{
-    const isSel=n===sel;
-    const gc={perception:'var(--green)',estimation:'var(--teal)',planning:'var(--slate)',control:'var(--rose)',mcu:'var(--amber)',system:'var(--base-04)'};
-    const c=gc[n.g]||'var(--base-04)';
-    const fill=isSel?c.replace('var(--','rgba(').replace(')','').replace('--green','94,166,93').replace('--teal','58,170,140').replace('--slate','91,123,180').replace('--rose','201,72,91').replace('--amber','212,146,58').replace('--base-04','52,60,74')+',.15)':'var(--base-01)';
-    s+=`<g class="nbox" style="cursor:pointer" onclick="pick('${n.id}')">`;
-    s+=`<rect x="${n.x}" y="${n.y}" width="${n.w}" height="40" fill="${fill}" stroke="${isSel?c:'var(--base-03)'}"/>`;
-    s+=`<circle cx="${n.x+9}" cy="${n.y+13}" r="2.5" fill="${n.s==='ok'?'var(--green)':'var(--rose)'}"/>`;
-    s+=`<text class="nlbl" x="${n.x+16}" y="${n.y+16}">${n.n.replace('/','')}</text>`;
-    const sub=n.g==='mcu'?`μROS ${n.hz}Hz`:`${n.hz}Hz · ${n.cpu}%`;
-    s+=`<text class="nsub" x="${n.x+16}" y="${n.y+30}">${sub}</text>`;
-    s+=`</g>`;
+
+  /* node plates */
+  N.forEach(n => {
+    const on  = n === sel;
+    const col = groupColor(n.g);
+    const st  = STATUS[n.s];
+    const sc  = tok(st.v);
+    const sub = n.g === 'mcu' ? `µROS · ${fmt.hz(n.hz)} Hz`
+              : n.hz > 0 ? `${fmt.hz(n.hz)} Hz · ${n.cpu}% cpu`
+              : 'bridge · idle';
+    s += `<g class="nbox" tabindex="0" role="button" data-id="${n.id}"
+             aria-label="${esc(n.n)}, ${G[n.g].label}, ${st.label}">
+      <rect class="plate" x="${n.x}" y="${n.y}" width="${n.w}" height="${NH}" rx="9"
+            fill="${on ? wash(col, 0.16) : c.surface}"
+            stroke="${on ? col : tok('--border-strong')}" stroke-width="${on ? 1.75 : 1}"/>
+      ${on ? `<rect x="${n.x - 3.5}" y="${n.y - 3.5}" width="${n.w + 7}" height="${NH + 7}" rx="12"
+                    fill="none" stroke="${col}" stroke-width="1.25" stroke-opacity="0.34"/>` : ''}
+      <rect x="${n.x + 1}" y="${n.y + 10}" width="3" height="${NH - 20}" rx="1.5" fill="${col}"/>
+      <circle cx="${n.x + 15}" cy="${n.y + 16}" r="3.2" fill="${sc}"/>
+      ${n.s !== 'ok' ? `<circle cx="${n.x + 15}" cy="${n.y + 16}" r="6" fill="none"
+                                stroke="${sc}" stroke-width="1.1" stroke-opacity=".45"/>` : ''}
+      <text class="nlbl" x="${n.x + 25}" y="${n.y + 20}">${esc(n.n.replace(/^\//, ''))}</text>
+      <text class="nsub" x="${n.x + 12}" y="${n.y + 36}">${esc(sub)}</text>
+      <text class="ngrp" x="${n.x + n.w - 10}" y="${n.y + 36}" text-anchor="end"
+            fill="${col}" opacity="0.9">${G[n.g].short}</text>
+    </g>`;
   });
-  // layer labels
-  [{t:'SBC — ROS2 Jazzy',x:10,y:15},{t:'MCU — FreeRTOS / micro-ROS',x:640,y:358}].forEach(l=>{
-    s+=`<text x="${l.x}" y="${l.y}" font-family="JetBrains Mono" font-size="8" fill="var(--base-04)" font-weight="500">${l.t}</text>`;
+
+  s += `</svg>`;
+  const host = document.getElementById('cvs');
+  host.innerHTML = s;
+  host.querySelectorAll('.nbox').forEach(g => {
+    const pick_ = () => pick(g.dataset.id);
+    g.addEventListener('click', pick_);
+    g.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick_(); }
+    });
   });
-  s+=`<line x1="630" y1="345" x2="920" y2="345" stroke="var(--base-03)" stroke-width="1" stroke-dasharray="4,3"/>`;
-  s+=`</svg>`;
-  document.getElementById('cvs').innerHTML=s;
 }
 
-function pick(id){sel=N.find(n=>n.id===id);rList();rInspector();rCanvas()}
+function renderGraphLegend() {
+  document.getElementById('graphLegend').innerHTML = GROUPS.map(g =>
+    `<span class="li"><span class="key" style="background:${groupColor(g.id)}"></span>${esc(g.label)}</span>`
+  ).join('');
+}
 
-// tabs
-document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',function(){
-  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
-  this.classList.add('on');
-}));
+/* ═══════════════════════════════════════════════════════════════════════════
+   SIDEBAR
+   ═══════════════════════════════════════════════════════════════════════════ */
+let nfilter = '';
+function renderList() {
+  const q = nfilter.trim().toLowerCase();
+  const hit = N.filter(n => !q || n.n.toLowerCase().includes(q) ||
+                             G[n.g].label.toLowerCase().includes(q));
+  document.getElementById('nodeCount').textContent = String(hit.length);
 
-// live metrics
-let sec=4477;
-setInterval(()=>{
+  if (!hit.length) {
+    document.getElementById('nlist').innerHTML =
+      `<div class="nempty">No node matches “${esc(nfilter)}”</div>`;
+    return;
+  }
+  let h = '';
+  GROUPS.forEach(g => {
+    const ns = hit.filter(n => n.g === g.id);
+    if (!ns.length) return;
+    h += `<div class="grp">
+            <span class="swatch" style="background:${groupColor(g.id)}"></span>
+            ${esc(g.label)}<span class="gcount">${ns.length}</span>
+          </div>`;
+    ns.forEach(n => {
+      h += `<button class="nitem" data-id="${n.id}" aria-current="${n === sel}">
+              <span class="sdot ${n.s}" title="${STATUS[n.s].label}"></span>
+              <span class="nm">${esc(n.n)}</span>
+              <span class="hz">${n.hz > 0 ? fmt.hz(n.hz) + 'Hz' : '—'}</span>
+            </button>`;
+    });
+  });
+  const host = document.getElementById('nlist');
+  host.innerHTML = h;
+  host.querySelectorAll('.nitem').forEach(b =>
+    b.addEventListener('click', () => pick(b.dataset.id)));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   INSPECTOR
+   ═══════════════════════════════════════════════════════════════════════════ */
+function qosTags(q) {
+  const map = {
+    'be':     [['best-effort', 0], ['volatile', 0]],
+    'rel':    [['reliable', 1], ['volatile', 0]],
+    'rel-tl': [['reliable', 1], ['transient-local', 1]],
+  };
+  return (map[q] || []).map(([l, hi]) =>
+    `<span class="qos-tag ${hi ? 'rel' : ''}">${l}</span>`).join('');
+}
+
+function renderInspector() {
+  const n = sel, col = groupColor(n.g), st = STATUS[n.s], isMcu = n.g === 'mcu';
+  const subsOf = t => N.filter(o => o.sub.some(s => s.t === t)).length;
+
+  let h = `<div class="insp-hero" style="--c:${col}">
+      <div class="insp-name">${esc(n.n)}</div>
+      <div class="insp-meta">
+        <span class="tag"><span class="key" style="width:8px;height:8px;border-radius:2px;
+              background:${col};display:inline-block"></span>${esc(G[n.g].label)}</span>
+        <span class="pill ${st.cls}"><svg class="ico"><use href="${st.icon}"/></svg>${st.label}</span>
+      </div>
+    </div>`;
+
+  h += `<div class="kv">
+      <div class="kv-item">
+        <div class="kv-k"><svg class="ico ico-sm"><use href="#i-pulse"/></svg>Rate</div>
+        <div class="kv-v">${n.hz > 0 ? fmt.hz(n.hz) : '—'}<span class="unit">Hz</span></div>
+      </div>
+      <div class="kv-item">
+        <div class="kv-k"><svg class="ico ico-sm"><use href="#i-clock"/></svg>Jitter</div>
+        <div class="kv-v">${n.jit.toFixed(2)}<span class="unit">ms</span></div>
+      </div>
+    </div>`;
+
+  if (isMcu) {
+    h += `<div class="kv-item">
+        <div class="kv-k"><svg class="ico ico-sm"><use href="#i-chip"/></svg>Executor</div>
+        <div class="kv-v sm">FreeRTOS task · ${fmt.hz(n.hz)} Hz · STM32H743 @ 480 MHz</div>
+      </div>
+      <div class="kv-item">
+        <div class="kv-k"><svg class="ico ico-sm"><use href="#i-net"/></svg>Transport</div>
+        <div class="kv-v sm">DDS-XRCE · Serial UART4 @ 921600 bd</div>
+      </div>`;
+  } else {
+    h += `<div class="kv">
+        <div class="kv-item">
+          <div class="kv-k"><svg class="ico ico-sm"><use href="#i-cpu"/></svg>CPU</div>
+          <div class="kv-v">${n.cpu}<span class="unit">%</span></div>
+        </div>
+        <div class="kv-item">
+          <div class="kv-k"><svg class="ico ico-sm"><use href="#i-ram"/></svg>Memory</div>
+          <div class="kv-v">${fmt.mem(n.mem)}</div>
+        </div>
+      </div>`;
+  }
+
+  /* executor budget meter — fill carries severity, track is the same ramp */
+  const bcol = n.budget >= 75 ? tok('--st-crit') : n.budget >= 55 ? tok('--st-warn') : col;
+  h += `<div>
+      <div class="isec-title"><svg class="ico ico-sm"><use href="#i-gauge"/></svg>Executor budget</div>
+      <div class="meter">
+        <div class="meter-track">
+          <div class="meter-fill" style="width:${n.budget}%;background:${bcol}"></div>
+        </div>
+        <span class="meter-val">${n.budget}%</span>
+      </div>
+    </div>`;
+
+  if (n.pub.length) {
+    h += `<div><div class="isec-title">
+        <svg class="ico ico-sm"><use href="#i-up"/></svg>Published
+        <span class="n">${n.pub.length}</span></div>`;
+    n.pub.forEach(p => {
+      const sz = MSG_BYTES[p.m] ?? 256;
+      h += `<div class="topic">
+          <div class="topic-top">
+            <span class="tkey" style="background:${col}"></span>
+            <span class="topic-name">${esc(p.t)}</span>
+            <span class="topic-hz">${fmt.hz(p.hz)} Hz</span>
+          </div>
+          <span class="topic-type">${esc(p.m)} · ${fmt.bytes(sz)} · ${subsOf(p.t)} sub${subsOf(p.t) === 1 ? '' : 's'}</span>
+          <div class="qos">${qosTags(p.qos)}</div>
+        </div>`;
+    });
+    h += `</div>`;
+  }
+
+  if (n.sub.length) {
+    h += `<div><div class="isec-title">
+        <svg class="ico ico-sm"><use href="#i-down"/></svg>Subscribed
+        <span class="n">${n.sub.length}</span></div>`;
+    n.sub.forEach(sb => {
+      const src = N.find(o => o.pub.some(p => p.t === sb.t));
+      h += `<div class="topic">
+          <div class="topic-top">
+            <span class="topic-name">${esc(sb.t)}</span>
+            ${sb.hz ? `<span class="topic-hz">${fmt.hz(sb.hz)} Hz</span>` : ''}
+          </div>
+          <span class="topic-type">${esc(sb.m)}${src ? ` · from ${esc(src.n)}` : ' · external'}</span>
+        </div>`;
+    });
+    h += `</div>`;
+  }
+
+  /* per-node live trace — one series, so no legend box; the title names it */
+  h += `<div><div class="isec-title">
+      <svg class="ico ico-sm"><use href="#i-pulse"/></svg>Publish rate · last 60 s</div>
+      <div class="chart chart-sm" id="ch-node"></div></div>`;
+
+  document.getElementById('inspector').innerHTML = h;
+  mountNodeTrace(n, col);
+}
+
+function mountNodeTrace(n, col) {
+  const total = n.pub.reduce((s, p) => s + p.hz, 0) || n.hz;
+  const data = pairs(slice(series.rate[n.g], 60).map((v, i) => {
+    const gTotal = nominalRate(n.g) || 1;
+    return +(total * (v / gTotal)).toFixed(2);
+  }), 60);
+  mount('ch-node', () => {
+    const b = baseOption(), c = chartTheme();
+    return {
+      ...b,
+      grid: { left: 2, right: 8, top: 12, bottom: 2, containLabel: true },
+      tooltip: { ...b.tooltip, trigger: 'axis',
+        axisPointer: { type: 'line', lineStyle: { color: c.axis, width: 1 } },
+        formatter: p => `<span style="color:${c.t3}">${new Date(p[0].value[0])
+          .toLocaleTimeString()}</span><br><b>${p[0].value[1]} msg/s</b>` },
+      xAxis: { ...b.xAxis, type: 'time', axisLabel: { ...b.xAxis.axisLabel, hideOverlap: true,
+        formatter: '{HH}:{mm}:{ss}' } },
+      yAxis: { ...b.yAxis, type: 'value', name: 'msg/s',
+        nameTextStyle: { color: c.t3, fontSize: 9.5, align: 'left' },
+        splitNumber: 3 },
+      series: [lineSeries('rate', data, col)],
+    };
+  });
+}
+
+function pick(id) {
+  const n = byId(id);
+  if (!n) return;
+  sel = n;
+  renderList(); renderInspector(); renderGraph();
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOPICS VIEW
+   ═══════════════════════════════════════════════════════════════════════════ */
+let topicGroup = 'all';
+let topicMode  = 'chart';
+
+const visibleTopics = () =>
+  topicGroup === 'all' ? TOPICS : TOPICS.filter(t => t.g === topicGroup);
+
+function renderTopicTiles() {
+  const ts = visibleTopics();
+  const totalBw  = ts.reduce((a, t) => a + t.bw, 0);
+  const totalMsg = ts.reduce((a, t) => a + t.hz, 0);
+  const biggest  = ts[0];
+  const rel      = ts.filter(t => t.qos !== 'be').length;
+
+  const tiles = [
+    { k:'topics', icon:'#i-list',  label:'Active topics',
+      val: String(ts.length), foot:`${rel} with reliable QoS`,
+      spark: slice(series.rate.perception, 24), color: tok('--s-perception') },
+    { k:'thr', icon:'#i-net', label:'Aggregate throughput',
+      val: totalBw >= 1024 ? (totalBw/1024).toFixed(1) : totalBw.toFixed(0),
+      unit: totalBw >= 1024 ? 'MiB/s' : 'KiB/s', foot:'serialised, pre-DDS framing',
+      spark: slice(series.rate.estimation, 24), color: tok('--s-estimation') },
+    { k:'msg', icon:'#i-pulse', label:'Message rate',
+      val: fmt.compact(Math.round(totalMsg)), unit:'msg/s', foot:'summed across publishers',
+      spark: slice(series.rate.control, 24), color: tok('--s-control') },
+    { k:'top', icon:'#i-zap', label:'Heaviest topic',
+      val: biggest ? biggest.t.replace(/^\//,'') : '—', small:true,
+      foot: biggest ? `${fmt.kib(biggest.bw)} · ${biggest.m}` : '',
+      spark: slice(series.rate.mcu, 24), color: tok('--s-mcu') },
+  ];
+
+  document.getElementById('topicTiles').innerHTML = tiles.map(t => `
+    <div class="tile">
+      <div class="tile-label"><svg class="ico ico-sm"><use href="${t.icon}"/></svg>${t.label}</div>
+      <div class="tile-val" style="${t.small ? 'font-size:17px;font-family:var(--mono);word-break:break-all' : ''}">
+        ${esc(t.val)}${t.unit ? `<span class="unit">${t.unit}</span>` : ''}
+      </div>
+      <div class="tile-foot">${esc(t.foot)}</div>
+      <div class="tile-spark" data-k="${t.k}"></div>
+    </div>`).join('');
+
+  tiles.forEach(t => sparkline(
+    document.querySelector(`#topicTiles .tile-spark[data-k="${t.k}"]`), t.spark, t.color));
+}
+
+/* publish rate by group — 6 converging series, so legend + tooltip carry
+   identity and nothing is direct-labelled at the right edge */
+function renderRateChart() {
+  const n = winSec.topics;
+  const shown = topicGroup === 'all' ? GROUPS : GROUPS.filter(g => g.id === topicGroup);
+
+  mount('ch-rate', () => {
+    const b = baseOption(), c = chartTheme();
+    return {
+      ...b,
+      grid: { left: 4, right: 16, top: 8, bottom: 2, containLabel: true },
+      tooltip: {
+        ...b.tooltip, trigger: 'axis',
+        axisPointer: { type: 'line', lineStyle: { color: c.axis, width: 1 } },
+        formatter: ps => {
+          const head = `<div style="color:${c.t3};font-size:10.5px;margin-bottom:5px">
+            ${new Date(ps[0].value[0]).toLocaleTimeString()}</div>`;
+          const rows = ps.slice().sort((a,z) => z.value[1]-a.value[1]).map(p =>
+            `<div style="display:flex;gap:10px;align-items:center;margin:2px 0">
+               <span style="width:9px;height:9px;border-radius:2px;background:${p.color}"></span>
+               <span style="flex:1;color:${c.t2}">${p.seriesName}</span>
+               <b style="font-family:${c.mono}">${p.value[1]}</b></div>`).join('');
+          return head + rows;
+        },
+      },
+      xAxis: { ...b.xAxis, type: 'time',
+        axisLabel: { ...b.xAxis.axisLabel, hideOverlap: true, formatter: '{HH}:{mm}:{ss}' } },
+      yAxis: { ...b.yAxis, type: 'value', name: 'msg/s',
+        nameTextStyle: { color: c.t3, fontSize: 10, align: 'left', padding: [0,0,4,-2] } },
+      legend: { show: false },   // the HTML legend below the title drives selection
+      series: shown.map(g =>
+        lineSeries(g.label, pairs(series.rate[g.id], n), groupColor(g.id),
+                   { area: shown.length === 1 })),
+    };
+  });
+
+  renderLegend('lg-rate', shown.map(g =>
+    ({ name: g.label, label: g.label, color: groupColor(g.id), line: true })), 'ch-rate');
+}
+
+/* bandwidth by topic — bars coloured by the group each topic belongs to
+   (categorical identity, never a value ramp), top 10 only */
+function renderBwChart() {
+  const ts = visibleTopics().slice(0, 10).slice().reverse();
+
+  mount('ch-bw', () => {
+    const b = baseOption(), c = chartTheme();
+    return {
+      ...b,
+      grid: { left: 4, right: 62, top: 6, bottom: 2, containLabel: true },
+      tooltip: {
+        ...b.tooltip, trigger: 'item',
+        formatter: p => {
+          const t = ts[p.dataIndex];
+          return `<b style="font-family:${c.mono}">${esc(t.t)}</b>
+            <div style="color:${c.t3};margin-top:4px">${esc(t.m)} · ${fmt.bytes(t.size)}/msg</div>
+            <div style="margin-top:4px">${fmt.kib(t.bw)} at ${fmt.hz(t.hz)} Hz</div>`;
+        },
+      },
+      xAxis: { ...b.xAxis, type: 'value', name: 'KiB/s',
+        nameTextStyle: { color: c.t3, fontSize: 10 },
+        splitLine: { lineStyle: { color: c.grid, width: 1, type: 'solid' } },
+        axisLine: { show: false }, axisLabel: { ...b.xAxis.axisLabel, formatter: v => fmt.compact(v) } },
+      yAxis: { ...b.yAxis, type: 'category',
+        data: ts.map(t => t.t),
+        axisLabel: { color: c.t2, fontSize: 10.5, fontFamily: c.mono },
+        splitLine: { show: false } },
+      series: [ barSeries('KiB/s', ts.map(t => ({
+        value: +t.bw.toFixed(1),
+        itemStyle: { color: groupColor(t.g), borderRadius: [0, 4, 4, 0] },
+      })), { extra: {
+        label: { show: true, position: 'right', color: c.t2, fontSize: 10,
+                 fontFamily: c.mono, formatter: p => fmt.compact(p.value) },
+      }})],
+    };
+  });
+}
+
+/* message size distribution — one series, so no legend box */
+function renderSizeChart() {
+  const buckets = [
+    ['≤64 B', 0, 64], ['65–512 B', 64, 512], ['513 B–4 KiB', 512, 4096],
+    ['4–64 KiB', 4096, 65536], ['64–512 KiB', 65536, 524288], ['>512 KiB', 524288, Infinity],
+  ];
+  const ts = visibleTopics();
+  const counts = buckets.map(([, lo, hi]) => ts.filter(t => t.size > lo && t.size <= hi).length);
+
+  mount('ch-size', () => {
+    const b = baseOption(), c = chartTheme();
+    return {
+      ...b,
+      grid: { left: 4, right: 10, top: 14, bottom: 2, containLabel: true },
+      tooltip: { ...b.tooltip, trigger: 'item',
+        formatter: p => {
+          const names = ts.filter(t => t.size > buckets[p.dataIndex][1] &&
+                                       t.size <= buckets[p.dataIndex][2]).map(t => t.t);
+          return `<b>${buckets[p.dataIndex][0]}</b>
+            <div style="margin-top:3px">${p.value} topic${p.value === 1 ? '' : 's'}</div>
+            <div style="color:${c.t3};font-family:${c.mono};font-size:10px;margin-top:4px;
+                        max-width:220px;white-space:normal">${esc(names.join(', ')) || '—'}</div>`;
+        } },
+      xAxis: { ...b.xAxis, type: 'category', data: buckets.map(x => x[0]),
+        axisLabel: { ...b.xAxis.axisLabel, fontFamily: c.ui, color: c.t3,
+                     interval: 0, hideOverlap: true } },
+      yAxis: { ...b.yAxis, type: 'value', name: 'topics', minInterval: 1,
+        nameTextStyle: { color: c.t3, fontSize: 10, align: 'left', padding: [0,0,4,-2] } },
+      series: [ columnSeries('topics', counts, tok('--s-perception'), { extra: {
+        label: { show: true, position: 'top', color: c.t2, fontSize: 10.5,
+                 fontFamily: c.mono, formatter: p => p.value || '' },
+      }})],
+    };
+  });
+}
+
+/* ─── table-view twin ─────────────────────────────────────────────────────── */
+let tSort = { k: 'bw', dir: -1 };
+function renderTopicTable() {
+  const rows = visibleTopics().slice().sort((a, b) => {
+    const x = a[tSort.k], y = b[tSort.k];
+    return (typeof x === 'string' ? x.localeCompare(y) : x - y) * tSort.dir;
+  });
+  document.querySelector('#tTable tbody').innerHTML = rows.map(t => `
+    <tr>
+      <td class="name"><span class="tkey" style="background:${groupColor(t.g)}"></span>${esc(t.t)}</td>
+      <td class="msgtype">${esc(t.m)}</td>
+      <td class="name" style="font-weight:400;color:var(--text-2)">${esc(t.pubName)}</td>
+      <td class="num">${t.subs}</td>
+      <td class="num">${fmt.hz(t.hz)}</td>
+      <td class="num">${t.bw.toFixed(1)}</td>
+      <td class="num">${t.size.toLocaleString()}</td>
+      <td>${qosTags(t.qos)}</td>
+    </tr>`).join('');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DIAGNOSTICS VIEW
+   ═══════════════════════════════════════════════════════════════════════════ */
+let diagMode = 'chart';
+const MEM_TOTAL_GB = 8, TEMP_LIMIT_C = 90;
+
+function renderDiagTiles() {
+  const cpu = series.cpu.at(-1), mem = series.mem.at(-1),
+        temp = series.temp.at(-1), lat = series.lat.at(-1);
+  const prev = k => series[k].at(-31) ?? series[k][0];
+  const d = (now, was) => now - was;
+
+  const tiles = [
+    { k:'cpu', icon:'#i-cpu', label:'CPU load', val: cpu.toFixed(0), unit:'%',
+      delta: d(cpu, prev('cpu')), inv:true, color: tok('--s-estimation'),
+      spark: slice(series.cpu, 24), foot:'8-core Cortex-A78AE' },
+    { k:'mem', icon:'#i-ram', label:'Memory in use',
+      val: (mem / 100 * MEM_TOTAL_GB).toFixed(2), unit:'GB',
+      delta: d(mem, prev('mem')), inv:true, color: tok('--s-perception'),
+      spark: slice(series.mem, 24), foot:`of ${MEM_TOTAL_GB} GB LPDDR5` },
+    { k:'temp', icon:'#i-therm', label:'Package temp', val: temp.toFixed(0), unit:'°C',
+      delta: d(temp, prev('temp')), inv:true, color: tok('--s-planning'),
+      spark: slice(series.temp, 24), foot:`throttles at ${TEMP_LIMIT_C} °C` },
+    { k:'lat', icon:'#i-zap', label:'MCU→SBC p99',
+      val: pct(0.99).toFixed(2), unit:'ms',
+      delta: d(lat, prev('lat')), inv:true, color: tok('--s-mcu'),
+      spark: slice(series.lat, 24), foot:`p50 ${pct(0.5).toFixed(2)} · p95 ${pct(0.95).toFixed(2)}` },
+  ];
+
+  document.getElementById('diagTiles').innerHTML = tiles.map(t => {
+    const dir = Math.abs(t.delta) < 0.35 ? 'flat' : (t.delta > 0) === !t.inv ? 'up' : 'down';
+    const icon = dir === 'flat' ? '' :
+      `<svg class="ico ico-sm"><use href="#i-${t.delta > 0 ? 'up' : 'down'}"/></svg>`;
+    return `<div class="tile">
+      <div class="tile-label"><svg class="ico ico-sm"><use href="${t.icon}"/></svg>${t.label}</div>
+      <div class="tile-val">${t.val}<span class="unit">${t.unit}</span></div>
+      <div class="tile-foot">
+        <span class="delta ${dir}">${icon}${dir === 'flat' ? 'steady' :
+          (t.delta > 0 ? '+' : '') + t.delta.toFixed(1)}</span>
+        <span>${esc(t.foot)}</span>
+      </div>
+      <div class="tile-spark" data-k="${t.k}"></div>
+    </div>`;
+  }).join('');
+
+  tiles.forEach(t => sparkline(
+    document.querySelector(`#diagTiles .tile-spark[data-k="${t.k}"]`), t.spark, t.color));
+}
+
+/* Three measures of different units on ONE axis: each is expressed as a share
+   of its own capacity, so the scales are comparable by construction rather
+   than by an arbitrary dual-axis alignment. Absolutes live in the tooltip. */
+function renderResChart() {
+  const n = winSec.diag;
+  const defs = [
+    { name:'CPU load',   key:'cpu',  color: tok('--s-estimation'),
+      abs: v => `${v.toFixed(1)} %` },
+    { name:'Memory',     key:'mem',  color: tok('--s-perception'),
+      abs: v => `${(v / 100 * MEM_TOTAL_GB).toFixed(2)} GB of ${MEM_TOTAL_GB} GB` },
+    { name:'Temperature',key:'temp', color: tok('--s-planning'),
+      abs: v => `${(v / 100 * TEMP_LIMIT_C).toFixed(1)} °C of ${TEMP_LIMIT_C} °C` },
+  ];
+
+  mount('ch-res', () => {
+    const b = baseOption(), c = chartTheme();
+    return {
+      ...b,
+      grid: { left: 4, right: 16, top: 8, bottom: 2, containLabel: true },
+      tooltip: {
+        ...b.tooltip, trigger: 'axis',
+        axisPointer: { type: 'line', lineStyle: { color: c.axis, width: 1 } },
+        formatter: ps => {
+          const head = `<div style="color:${c.t3};font-size:10.5px;margin-bottom:5px">
+            ${new Date(ps[0].value[0]).toLocaleTimeString()}</div>`;
+          return head + ps.map(p => {
+            const def = defs.find(d => d.name === p.seriesName);
+            return `<div style="display:flex;gap:10px;align-items:center;margin:2px 0">
+              <span style="width:9px;height:9px;border-radius:2px;background:${p.color}"></span>
+              <span style="flex:1;color:${c.t2}">${p.seriesName}</span>
+              <b style="font-family:${c.mono}">${def.abs(p.value[1])}</b></div>`;
+          }).join('');
+        },
+      },
+      xAxis: { ...b.xAxis, type: 'time',
+        axisLabel: { ...b.xAxis.axisLabel, hideOverlap: true, formatter: '{HH}:{mm}:{ss}' } },
+      yAxis: { ...b.yAxis, type: 'value', min: 0, max: 100,
+        name: '% of capacity',
+        nameTextStyle: { color: c.t3, fontSize: 10, align: 'left', padding: [0,0,4,-2] },
+        axisLabel: { ...b.yAxis.axisLabel, formatter: '{value}%' } },
+      legend: { show: false },
+      series: defs.map(d =>
+        lineSeries(d.name, pairs(series[d.key], n), d.color, { area: false })),
+    };
+  });
+
+  renderLegend('lg-res', defs.map(d =>
+    ({ name: d.name, label: d.name, color: d.color, line: true })), 'ch-res');
+}
+
+/* latency histogram — one series; percentiles are the selective direct labels */
+function renderLatChart() {
+  const lo = 0.1, hi = 3.0, bins = 28, w = (hi - lo) / bins;
+  const counts = new Array(bins).fill(0);
+  LAT_SAMPLES.forEach(v => {
+    const i = Math.floor((Math.min(v, hi - 1e-9) - lo) / w);
+    if (i >= 0 && i < bins) counts[i]++;
+  });
+  const labels = counts.map((_, i) => (lo + i * w + w / 2).toFixed(2));
+
+  mount('ch-lat', () => {
+    const b = baseOption(), c = chartTheme();
+    const mark = (p, label, color) => ({
+      xAxis: Math.round((pct(p) - lo) / w - 0.5),
+      lineStyle: { color, width: 1.5, type: 'solid' },
+      label: { show: true, formatter: label, color, fontSize: 10, rotate: 0,
+               fontFamily: c.mono, position: 'end', distance: [0, 4] },
+    });
+    return {
+      ...b,
+      grid: { left: 4, right: 12, top: 30, bottom: 2, containLabel: true },
+      tooltip: { ...b.tooltip, trigger: 'axis',
+        axisPointer: { type: 'shadow', shadowStyle: { color: wash(tok('--text-3'), 0.10) } },
+        formatter: ps => `<b style="font-family:${c.mono}">${ps[0].name} ms</b>
+          <div style="margin-top:3px">${ps[0].value.toLocaleString()} samples</div>` },
+      xAxis: { ...b.xAxis, type: 'category', data: labels, name: 'ms',
+        nameLocation: 'end', nameTextStyle: { color: c.t3, fontSize: 10 },
+        axisLabel: { ...b.xAxis.axisLabel, interval: 3, hideOverlap: true } },
+      yAxis: { ...b.yAxis, type: 'value', name: 'samples',
+        nameTextStyle: { color: c.t3, fontSize: 10, align: 'left', padding: [0,0,4,-2] },
+        axisLabel: { ...b.yAxis.axisLabel, formatter: v => fmt.compact(v) } },
+      series: [ columnSeries('samples', counts, tok('--s-mcu'), { extra: {
+        markLine: {
+          symbol: 'none', animation: false,
+          data: [ mark(0.5, 'p50', tok('--text-2')),
+                  mark(0.95, 'p95', tok('--st-warn')),
+                  mark(0.99, 'p99', tok('--st-crit')) ],
+        },
+      }})],
+    };
+  });
+}
+
+/* executor budget — coloured by group (identity), severity shown by the pill
+   in the tooltip and by the table, never by hue alone */
+function renderBudgetChart() {
+  const ns = N.slice().sort((a, b) => a.budget - b.budget);
+
+  mount('ch-budget', () => {
+    const b = baseOption(), c = chartTheme();
+    return {
+      ...b,
+      grid: { left: 4, right: 40, top: 6, bottom: 20, containLabel: true },
+      tooltip: { ...b.tooltip, trigger: 'item',
+        formatter: p => {
+          const n = ns[p.dataIndex], st = n.budget >= 75 ? 'over budget'
+            : n.budget >= 55 ? 'approaching limit' : 'within budget';
+          return `<b style="font-family:${c.mono}">${esc(n.n)}</b>
+            <div style="color:${c.t3};margin-top:4px">${esc(G[n.g].label)}</div>
+            <div style="margin-top:4px">${n.budget}% of deadline · ${st}</div>
+            <div style="color:${c.t3};margin-top:2px">jitter ${n.jit.toFixed(2)} ms</div>`;
+        } },
+      xAxis: { ...b.xAxis, type: 'value', max: 100, name: '% of deadline',
+        nameLocation: 'middle', nameGap: 26,
+        nameTextStyle: { color: c.t3, fontSize: 10 }, axisLine: { show: false },
+        splitLine: { lineStyle: { color: c.grid, width: 1, type: 'solid' } },
+        axisLabel: { ...b.xAxis.axisLabel, formatter: '{value}%' } },
+      yAxis: { ...b.yAxis, type: 'category', data: ns.map(n => n.n.replace(/^\//, '')),
+        axisLabel: { color: c.t2, fontSize: 10, fontFamily: c.mono },
+        splitLine: { show: false } },
+      series: [ barSeries('budget', ns.map(n => ({
+        value: n.budget,
+        itemStyle: { color: groupColor(n.g), borderRadius: [0, 4, 4, 0] },
+      })), { extra: {
+        label: { show: true, position: 'right', color: c.t2, fontSize: 10,
+                 fontFamily: c.mono, formatter: p => p.value + '%' },
+      }})],
+    };
+  });
+}
+
+/* callback jitter heatmap — sequential, ONE hue, light→dark, with a scale legend */
+function renderHeatChart() {
+  const cols = 16;
+  const rows = N.filter(n => n.hz > 0).slice(0, 10);
+  const data = [];
+  rows.forEach((n, y) => {
+    for (let x = 0; x < cols; x++) {
+      data.push([x, y, +(n.jit * (0.55 + Math.random() * 0.95)).toFixed(3)]);
+    }
+  });
+  const maxV = Math.max(...data.map(d => d[2]));
+
+  mount('ch-heat', () => {
+    const b = baseOption(), c = chartTheme();
+    return {
+      ...b,
+      grid: { left: 4, right: 10, top: 6, bottom: 34, containLabel: true },
+      tooltip: { ...b.tooltip, trigger: 'item',
+        formatter: p => `<b style="font-family:${c.mono}">${esc(rows[p.value[1]].n)}</b>
+          <div style="margin-top:3px">t−${(cols - p.value[0]) * 4}s · ${p.value[2].toFixed(3)} ms deviation</div>` },
+      xAxis: { ...b.xAxis, type: 'category', splitArea: { show: false },
+        data: Array.from({ length: cols }, (_, i) => `−${(cols - i) * 4}s`),
+        axisLabel: { ...b.xAxis.axisLabel, interval: 3, fontSize: 9.5 } },
+      yAxis: { ...b.yAxis, type: 'category', data: rows.map(n => n.n.replace(/^\//, '')),
+        splitLine: { show: false },
+        axisLabel: { color: c.t2, fontSize: 9.5, fontFamily: c.mono } },
+      visualMap: {
+        min: 0, max: maxV, calculable: true, orient: 'horizontal',
+        left: 'center', bottom: 0, itemWidth: 11, itemHeight: 78,
+        text: [`${maxV.toFixed(1)} ms`, '0'],
+        textStyle: { color: c.t3, fontSize: 10, fontFamily: c.mono },
+        inRange: { color: [tok('--seq-1'), tok('--seq-2'), tok('--seq-3'), tok('--seq-4'),
+                           tok('--seq-5'), tok('--seq-6'), tok('--seq-7')] },
+      },
+      series: [{
+        type: 'heatmap', data, progressive: 0,
+        itemStyle: { borderColor: c.surface, borderWidth: 2, borderRadius: 3 },
+        emphasis: { itemStyle: { borderColor: c.t1, borderWidth: 2 } },
+      }],
+    };
+  });
+}
+
+const EVENTS = [
+  { t:'01:14:22', l:'good', m:'<b>/slam_toolbox</b> loop closure accepted · 412 constraints' },
+  { t:'01:13:58', l:'warn', m:'<b>/slam_toolbox</b> scan-match latency 2.4 ms exceeds 2.0 ms budget' },
+  { t:'01:12:41', l:'info', m:'<b>/lifecycle_manager</b> bond established with 9 managed nodes' },
+  { t:'01:11:07', l:'good', m:'<b>/micro_ros_agent</b> session 0x7F re-established · 2 clients' },
+  { t:'01:09:55', l:'info', m:'<b>/planner_server</b> global plan computed in 84 ms' },
+  { t:'01:08:12', l:'warn', m:'<b>/camera_node</b> dropped 3 frames · USB bandwidth contention' },
+  { t:'01:06:30', l:'info', m:'<b>/robot_localization</b> EKF covariance converged' },
+  { t:'01:04:19', l:'good', m:'<b>/base_driver</b> wheel encoders calibrated · 2048 ppr' },
+  { t:'01:02:44', l:'crit', m:'<b>/pid_front_right</b> transport timeout · recovered after 180 ms' },
+  { t:'01:00:02', l:'info', m:'<b>/diagnostic_agg</b> aggregator started · 6 analyser groups' },
+];
+const LVL_ICON = { info:'#i-list', good:'#i-check', warn:'#i-warn', crit:'#i-alert' };
+
+function renderEventLog() {
+  document.getElementById('eventLog').innerHTML = EVENTS.map(e => `
+    <div class="log-row">
+      <span class="log-t">${e.t}</span>
+      <span class="log-lvl ${e.l}"><svg class="ico"><use href="${LVL_ICON[e.l]}"/></svg>${e.l.toUpperCase()}</span>
+      <span class="log-msg" title="${esc(e.m.replace(/<\/?b>/g, ''))}">${e.m}</span>
+    </div>`).join('');
+}
+
+function renderDiagTable() {
+  document.querySelector('#dTable tbody').innerHTML = N.slice()
+    .sort((a, b) => b.budget - a.budget).map(n => {
+      const st = STATUS[n.s];
+      return `<tr>
+        <td class="name"><span class="tkey" style="background:${groupColor(n.g)}"></span>${esc(n.n)}</td>
+        <td>${esc(G[n.g].label)}</td>
+        <td><span class="pill ${st.cls}">
+          <svg class="ico"><use href="${st.icon}"/></svg>${st.label}</span></td>
+        <td class="num">${n.hz > 0 ? fmt.hz(n.hz) : '—'}</td>
+        <td class="num">${n.g === 'mcu' ? '—' : n.cpu.toFixed(1)}</td>
+        <td class="num">${n.g === 'mcu' ? '—' : fmt.mem(n.mem)}</td>
+        <td class="num">${n.budget}</td>
+        <td class="num">${n.jit.toFixed(2)}</td>
+      </tr>`;
+    }).join('');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WIRING
+   ═══════════════════════════════════════════════════════════════════════════ */
+let activeView = 'graph';
+
+function setView(v) {
+  activeView = v;
+  writeHash(v);
+  document.querySelectorAll('.tab').forEach(t =>
+    t.setAttribute('aria-selected', String(t.dataset.t === v)));
+  document.querySelectorAll('.view').forEach(s =>
+    s.classList.toggle('on', s.id === 'v-' + v));
+  if (v === 'topics') renderTopics();
+  if (v === 'diag')   renderDiag();
+  requestAnimationFrame(resizeAll);
+}
+
+function renderTopics() {
+  renderTopicTiles();
+  const isChart = topicMode === 'chart';
+  document.getElementById('topicCharts').style.display = isChart ? '' : 'none';
+  document.getElementById('topicTable').style.display  = isChart ? 'none' : '';
+  if (isChart) { renderRateChart(); renderBwChart(); renderSizeChart(); requestAnimationFrame(resizeAll); }
+  else renderTopicTable();
+}
+function renderDiag() {
+  renderDiagTiles();
+  const isChart = diagMode === 'chart';
+  document.getElementById('diagCharts').style.display = isChart ? '' : 'none';
+  document.getElementById('diagTable').style.display  = isChart ? 'none' : '';
+  if (isChart) {
+    renderResChart(); renderLatChart(); renderBudgetChart(); renderHeatChart();
+    renderEventLog(); requestAnimationFrame(resizeAll);
+  } else renderDiagTable();
+}
+
+/* group filter buttons for the Topics view */
+document.getElementById('topicGroupFilter').innerHTML =
+  [{ id:'all', label:'All' }, ...GROUPS].map(g =>
+    `<button data-g="${g.id}" aria-pressed="${g.id === 'all'}">
+       ${g.id !== 'all' ? `<span class="key" style="width:8px;height:8px;border-radius:2px;
+          background:${groupColor(g.id)};display:inline-block"></span>` : ''}
+       ${esc(g.label)}</button>`).join('');
+
+/* one delegated handler drives every segmented control */
+function segHandler(hostId, attr, apply) {
+  const host = document.getElementById(hostId);
+  host.addEventListener('click', ev => {
+    const btn = ev.target.closest('button');
+    if (!btn) return;
+    host.querySelectorAll('button').forEach(b =>
+      b.setAttribute('aria-pressed', String(b === btn)));
+    apply(btn.dataset[attr]);
+  });
+}
+segHandler('topicGroupFilter', 'g', v => { topicGroup = v; renderTopics(); });
+segHandler('topicRange',       'r', v => { winSec.topics = +v; renderTopics(); });
+segHandler('topicViewMode',    'v', v => { topicMode = v; renderTopics(); });
+segHandler('diagRange',        'r', v => { winSec.diag = +v; renderDiag(); });
+segHandler('diagViewMode',     'v', v => { diagMode = v; renderDiag(); });
+
+document.querySelectorAll('.tab').forEach(t =>
+  t.addEventListener('click', () => setView(t.dataset.t)));
+
+document.getElementById('themeBtn').addEventListener('click', () =>
+  applyTheme(theme === 'dark' ? 'light' : 'dark'));
+
+document.getElementById('nsearch').addEventListener('input', ev => {
+  nfilter = ev.target.value; renderList();
+});
+
+/* sortable table headers */
+document.querySelectorAll('#tTable th.sortable').forEach(th =>
+  th.addEventListener('click', () => {
+    const k = th.dataset.k;
+    tSort = { k, dir: tSort.k === k ? -tSort.dir : -1 };
+    renderTopicTable();
+  }));
+
+/* ↑/↓ steps the selection through the node list */
+document.addEventListener('keydown', ev => {
+  if (ev.target.matches('input, textarea')) return;
+  if (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown') return;
+  const order = GROUPS.flatMap(g => N.filter(n => n.g === g.id));
+  const i = order.indexOf(sel);
+  const next = order[(i + (ev.key === 'ArrowDown' ? 1 : -1) + order.length) % order.length];
+  ev.preventDefault();
+  pick(next.id);
+});
+
+let rz;
+window.addEventListener('resize', () => {
+  clearTimeout(rz);
+  rz = setTimeout(() => { resizeAll(); renderGraph(); }, 120);
+});
+
+/* follow the OS theme only while the viewer has not chosen one explicitly */
+if (window.matchMedia) {
+  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', ev => {
+    let stored = null;
+    try { stored = localStorage.getItem('rosmon-theme'); } catch { /* blocked */ }
+    if (!stored) applyTheme(ev.matches ? 'light' : 'dark');
+  });
+}
+
+/* ─── live tick ───────────────────────────────────────────────────────────── */
+let sec = 4477;
+setInterval(() => {
   sec++;
-  const h=String(Math.floor(sec/3600)).padStart(2,'0');
-  const m=String(Math.floor((sec%3600)/60)).padStart(2,'0');
-  const s=String(sec%60).padStart(2,'0');
-  document.getElementById('ut').textContent=h+':'+m+':'+s;
-  document.getElementById('cpuv').textContent=(20+Math.random()*8).toFixed(0)+'%';
-  document.getElementById('memv').textContent=(1.3+Math.random()*0.15).toFixed(2)+' GB';
-  document.getElementById('latv').textContent=(0.6+Math.random()*0.5).toFixed(2)+'ms';
-},1000);
+  pushSample();
 
-rList();rInspector();rCanvas();
+  const h  = String(Math.floor(sec / 3600)).padStart(2, '0');
+  const m  = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
+  const ss = String(sec % 60).padStart(2, '0');
+  document.getElementById('ut').textContent   = `${h}:${m}:${ss}`;
+  document.getElementById('cpuv').textContent = series.cpu.at(-1).toFixed(0) + '%';
+  document.getElementById('memv').textContent =
+    (series.mem.at(-1) / 100 * MEM_TOTAL_GB).toFixed(2) + ' GB';
+  document.getElementById('latv').textContent = series.lat.at(-1).toFixed(2) + ' ms';
+
+  if (document.hidden) return;
+  if (activeView === 'topics' && topicMode === 'chart') {
+    renderTopicTiles();
+    charts['ch-rate']?.inst?.setOption(
+      { series: (topicGroup === 'all' ? GROUPS : GROUPS.filter(g => g.id === topicGroup))
+        .map(g => ({ data: pairs(series.rate[g.id], winSec.topics) })) });
+  }
+  if (activeView === 'diag' && diagMode === 'chart') {
+    renderDiagTiles();
+    charts['ch-res']?.inst?.setOption({ series: [
+      { data: pairs(series.cpu,  winSec.diag) },
+      { data: pairs(series.mem,  winSec.diag) },
+      { data: pairs(series.temp, winSec.diag) },
+    ]});
+  }
+  if (activeView === 'graph') {
+    charts['ch-node']?.inst && mountNodeTrace(sel, groupColor(sel.g));
+  }
+}, 1000);
+
+/* ─── deep links: #view=topics, optionally &theme=light ───────────────────── */
+function readHash() {
+  const h = new URLSearchParams(location.hash.replace(/^#/, ''));
+  return { view: h.get('view'), theme: h.get('theme') };
+}
+function writeHash(v) {
+  const h = new URLSearchParams(location.hash.replace(/^#/, ''));
+  h.set('view', v);
+  history.replaceState(null, '', '#' + h.toString());
+}
+window.addEventListener('hashchange', () => {
+  const { view } = readHash();
+  if (view && view !== activeView && document.getElementById('v-' + view)) setView(view);
+});
+
+/* ─── boot ────────────────────────────────────────────────────────────────── */
+const boot = readHash();
+if (boot.theme === 'light' || boot.theme === 'dark') theme = boot.theme;
+applyTheme(theme);
+renderList();
+renderGraphLegend();
+renderInspector();
+renderGraph();
+setView(boot.view && document.getElementById('v-' + boot.view) ? boot.view : 'graph');
 </script>
 </body>
 </html>
